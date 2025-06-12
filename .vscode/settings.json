@@ -1,0 +1,5 @@
+{
+    "python.analysis.extraPaths": [
+        "./depth-to-pointcloud-for-dp3-deploymentBranch/Sustech_pcGenerate"
+    ]
+}
