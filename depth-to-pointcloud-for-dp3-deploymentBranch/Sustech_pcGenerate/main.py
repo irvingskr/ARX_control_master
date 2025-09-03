@@ -11,8 +11,8 @@ from typing import List, Tuple, Optional
 import time
 
 # 1. 初始化参数
-zarr_path = "/home/arxpro/ARX_Remote_Control/data/5_18_simple.zarr/data"
-output_zarr_path = "data/5_18_simple.zarr/data/pcd"
+zarr_path = "/home/arxpro/ARX_Remote_Control/data/9_2_lemon_plate_2.zarr/data"
+output_zarr_path = "/home/arxpro/ARX_Remote_Control/data/9_2_lemon_plate_2.zarr/data/pcd"
 
 
 # 2. 读取深度数据（添加详细检查）
@@ -35,7 +35,7 @@ valid_frames = 0
 
 # switch a method for looping:
 # start, end = 0, depth_from_robot.shape[0]-1 # 想要的范围
-start, end = 0, 10 # 想要的范围
+start, end = 0, 3999 # 想要的范围
 selected_frames = depth_from_robot[start : end+1]  # 切片获取980-984（共5帧）
 
 # 在循环开始前初始化计时变量

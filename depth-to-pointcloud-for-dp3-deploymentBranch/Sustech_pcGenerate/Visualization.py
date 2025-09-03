@@ -4,12 +4,12 @@ import zarr
 from Cloud_Process import boundary
 
 # 加载Zarr数据
-zarr_path = "data/5_18_simple.zarr/data/pcd"
+zarr_path = "/home/arxpro/ARX_Remote_Control/data/9_2_lemon_plate_2.zarr/data/pcd"
 zarr_root = zarr.open(zarr_path, mode='r')
 point_clouds = zarr_root['pointcloud']  # 形状 [N, 1024, 6]
 
 # 选择帧（例如第1200帧）
-frame_idx = 9
+frame_idx = 90
 pc_data = point_clouds[frame_idx]
 
 # 仅提取坐标（忽略颜色信息）
@@ -23,9 +23,9 @@ pcd.points = o3d.utility.Vector3dVector(points)
 coord_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.05, origin=[0, 0, 0])
 #bounding box
 WORK_SPACE = [
-    [-0.14, 0.1],
-    [-0.03, 0.2],
-    [0, 0.1]
+    [-0.05, 0.1],
+    [-0.04, 0.2],
+    [-0.0025, 0.1]
 ]
 min_bound, max_bound = boundary(WORK_SPACE)
 custom_bbox = o3d.geometry.AxisAlignedBoundingBox(min_bound, max_bound)

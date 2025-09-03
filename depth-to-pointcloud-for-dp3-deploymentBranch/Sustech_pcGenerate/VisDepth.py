@@ -47,11 +47,8 @@ def visualize_depth_image(zarr_path, frame_idx=0):
         return None
 
 if __name__ == "__main__":
-    if len(sys.argv) < 2:
-        print("使用方法: python VisDepth.py <zarr_path> [frame_idx]")
-        sys.exit(1)
         
-    zarr_path = sys.argv[1]
+    zarr_path = "/home/arxpro/ARX_Remote_Control/data/9_2_lemon_plate.zarr/data"
     frame_idx = int(sys.argv[2]) if len(sys.argv) > 2 else 0
     
     # 调用函数并获取返回的depth对象

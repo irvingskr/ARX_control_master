@@ -43,9 +43,9 @@ def preprocess_point_cloud(points, use_cuda=True):
     num_points = 1024
 
     WORK_SPACE = [
-    [-0.14, 0.1],
-    [-0.03, 0.2],
-    [0, 0.1]
+    [-0.05, 0.1],
+    [-0.04, 0.2],
+    [-0.0025, 0.1]
 ]
     # scale
     points = points[..., :3]*0.0002500000118743628
