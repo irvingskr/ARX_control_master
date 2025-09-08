@@ -27,7 +27,7 @@ D = np.array([0.0, 0.0, 0.0, 0.0, 0.0])
 # 图像文件名到测量坐标的映射字典
 MEASURED_COORDS = {
     "image1.jpg": np.array([100.0, 200.0, 50.0]),  # 替换为实际测量值
-    "chessboard_001.png": np.array([175, 400, 126),  # 替换为实际测量值
+    "chessboard_001.png": np.array([175, 400, 126]),  # 替换为实际测量值
     "chessboard_002.png": np.array([100, 275, 126]),  # 替换为实际测量值
     "chessboard_003.png": np.array([-12, 560, 3]),  # 替换为实际测量值
     "chessboard_004.png": np.array([75, 510, 3]),  # 替换为实际测量值
