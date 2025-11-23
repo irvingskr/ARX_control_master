@@ -177,6 +177,29 @@ public:
     float ros_control_cur[7] ={};
     float ros_control_cur_t[7] ={0.0f};
 
+    // 主臂位置控制变量
+    bool use_master_control = false;
+    float master_control_x = 0.0f;
+    float master_control_y = 0.0f;
+    float master_control_z = 0.0f;
+    float master_control_roll = 0.0f;
+    float master_control_pitch = 0.0f;
+    float master_control_yaw = 0.0f;
+    float master_control_gripper = 0.0f;
+    
+    // 用于保存力矩示教模式结束时的位置
+    bool last_is_teach_mode = false;
+    float teach_end_x = 0.0f;
+    float teach_end_y = 0.0f;
+    float teach_end_z = 0.0f;
+    float teach_end_roll = 0.0f;
+    float teach_end_pitch = 0.0f;
+    float teach_end_yaw = 0.0f;
+    
+    // 人为干预控制变量
+    bool human_intervention_flag = false;      // 接收到的 human_intervention 话题值
+    bool human_intervention_last_flag = false; // 上一次的 human_intervention 值，用于检测边沿
+
     bool Data_filter_init=false;
     float fliter_num[3] = {1.929454039488895f, -0.93178349823448126f, 0.002329458745586203f};
     float Data_filter[10];

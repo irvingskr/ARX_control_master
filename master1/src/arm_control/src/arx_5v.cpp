@@ -2,6 +2,7 @@
 #include <cmath>
 #include <iostream>
 #include <std_msgs/Float32MultiArray.h>
+#include <std_msgs/Bool.h>
 #include "utility.h"
 #include "Hardware/can.h"
 #include "Hardware/motor.h"
@@ -42,6 +43,27 @@ int main(int argc, char **argv)
                                       ARX_ARM.ros_control_cur_t[6] = msg->joint_cur[6];
                                       ARX_ARM.ros_control_pos_t[6] = msg->joint_pos[6];
                                   });
+
+    // 订阅主臂位置控制话题
+    ros::Subscriber sub_master_control = node.subscribe<arm_control::PosCmd>("/master_control", 10,
+                                  [&ARX_ARM](const arm_control::PosCmd::ConstPtr& msg) {
+                                      ARX_ARM.master_control_x = msg->x;
+                                      ARX_ARM.master_control_y = msg->y;
+                                      ARX_ARM.master_control_z = msg->z;
+                                      ARX_ARM.master_control_roll = msg->roll;
+                                      ARX_ARM.master_control_pitch = msg->pitch;
+                                      ARX_ARM.master_control_yaw = msg->yaw;
+                                      ARX_ARM.master_control_gripper = msg->gripper;
+                                      ARX_ARM.use_master_control = true;
+                                  });
+
+    // 订阅人为干预话题
+    ros::Subscriber sub_human_intervention = node.subscribe<std_msgs::Bool>("/human_intervention", 10,
+                                  [&ARX_ARM](const std_msgs::Bool::ConstPtr& msg) {
+                                      ARX_ARM.human_intervention_flag = msg->data;
+                                      ROS_INFO("Human intervention: %s", msg->data ? "TRUE" : "FALSE");
+                                  });
+
     ros::Publisher pub_joint = node.advertise<arm_control::JointControl>("/joint_control", 10);
     ros::Publisher pub_pos = node.advertise<arm_control::PosCmd>("/master1_pos_back", 10);
     

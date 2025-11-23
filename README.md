@@ -20,16 +20,10 @@ roscore
 在remote control中 如果部署则是follow_control
 ```shell
 ./can.sh
-./start.sh
+./start_sample.sh
 ```
 在master中点击i键开启机械臂示教
-
-## 启动摄像机
-
-新建终端执行：
-```shell
-[follow1] cd follow1 && source devel/setup.bash && roslaunch arm_control camera.launch
-```
+``
 
 ## 设置路径
 sample.py设置Max_step，directory_path，video_path
@@ -40,14 +34,17 @@ sample.py设置Max_step，directory_path，video_path
 ## 开始采集
 
 ```shell
+conda activate dp3
 [follow1] cd follow1 && source devel/setup.bash
 [follow1] rosrun arm_control sample.py
 ```
 
 ## 部署
 ```shell
+conda activate dp3
 [follow1] cd follow1 && source devel/setup.bash 
 rosrun arm_control shit_moutain.py
+
+#机械臂归位：
+[follow1] ./back_to_origin.sh
 ```
-
-

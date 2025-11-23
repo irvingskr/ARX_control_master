@@ -531,7 +531,56 @@ void arx_arm::getKey(char key_t) {
 
 void arx_arm::arm_torque_mode()
 {
-        if( (Teleop_Use()->buttons_[5] == 1 && !button5_pressed)  || ( arx5_cmd.key_i ==1 &&  !button5_pressed) )
+        // 检测 human_intervention 从 1 变为 0（下降沿），强制退出 torque 模式
+        if (!human_intervention_flag && human_intervention_last_flag && is_torque_control) {
+            ROS_WARN("Human intervention: Force exit torque mode!");
+            
+            is_teach_mode = false;
+            is_torque_control = false;
+            teach2pos_returning = false;
+            
+            // 保存力矩示教结束时的末端位置
+            teach_end_x = solve.solve_pos[0];
+            teach_end_y = solve.solve_pos[1];
+            teach_end_z = solve.solve_pos[2];
+            teach_end_roll = solve.solve_pos[3];
+            teach_end_pitch = solve.solve_pos[4];
+            teach_end_yaw = solve.solve_pos[5];
+            
+            // 将当前关节位置设置为目标位置
+            for (int i = 0; i < 6; i++)
+            {
+                target_pos[i] = current_pos[i];
+            }
+            
+            // 更新arx5_cmd为示教结束位置
+            arx5_cmd.x = teach_end_x;
+            arx5_cmd.y = teach_end_y;
+            arx5_cmd.z = teach_end_z;
+            arx5_cmd.gripper_roll = teach_end_roll;
+            arx5_cmd.waist_pitch = teach_end_pitch;
+            arx5_cmd.waist_yaw = teach_end_yaw;
+            
+            // 更新control变量
+            arx5_cmd.control_x = teach_end_x - magic_pos[0];
+            arx5_cmd.control_y = teach_end_y - magic_pos[1];
+            arx5_cmd.control_z = teach_end_z - magic_pos[2];
+            arx5_cmd.control_roll = teach_end_roll - magic_angle[2];
+            arx5_cmd.control_pit = teach_end_pitch - magic_angle[0];
+            arx5_cmd.control_yaw = teach_end_yaw - magic_angle[1];
+            
+            // 确保不会触发初始化过程
+            is_starting = false;
+            temp_init = 0;
+            
+            // 释放按钮锁
+            button5_pressed = false;
+            
+            ROS_INFO("Exit teach mode, saved position: x=%f, y=%f, z=%f", teach_end_x, teach_end_y, teach_end_z);
+        }
+        
+        // 进入 torque 模式的条件：手柄按钮5 或 按键i 或 human_intervention 话题为1
+        if( (Teleop_Use()->buttons_[5] == 1 && !button5_pressed) || (arx5_cmd.key_i == 1 && !button5_pressed) || (human_intervention_flag && !button5_pressed) )
         {
             button5_pressed = true;
             if (!is_torque_control) 
@@ -539,26 +588,69 @@ void arx_arm::arm_torque_mode()
                 init_kp=10,init_kp_4=20,init_kd=init_kd_4=init_kd_6=init_kp_4=0; 
                 is_teach_mode = true;
                 is_torque_control = true;
+                
+                // 进入力矩示教模式，暂停 master_control 控制
+                use_master_control = false;
+                
                 for (int i = 0; i < 6; i++)
                 {
                     prev_target_pos[i] = target_pos[i];
                 }
-            }else
+                
+                if (human_intervention_flag) {
+                    ROS_WARN("Human intervention: Force enter torque mode!");
+                }
+            }else if(!human_intervention_flag)
             {   
                 is_teach_mode = false;
                 is_torque_control = false;
-                teach2pos_returning = true;
+                // 不设置 teach2pos_returning，避免触发 init_step
+                teach2pos_returning = false;
+                
+                // 保存力矩示教结束时的末端位置（来自solve.solve_pos）
+                teach_end_x = solve.solve_pos[0];
+                teach_end_y = solve.solve_pos[1];
+                teach_end_z = solve.solve_pos[2];
+                teach_end_roll = solve.solve_pos[3];
+                teach_end_pitch = solve.solve_pos[4];
+                teach_end_yaw = solve.solve_pos[5];
+                
+                // 将当前关节位置设置为目标位置，用于平滑过渡
                 for (int i = 0; i < 6; i++)
                 {
                     target_pos[i] = current_pos[i];
                 }
                 
+                // 更新arx5_cmd为示教结束位置，防止下次位置控制时跳回原点
+                arx5_cmd.x = teach_end_x;
+                arx5_cmd.y = teach_end_y;
+                arx5_cmd.z = teach_end_z;
+                arx5_cmd.gripper_roll = teach_end_roll;
+                arx5_cmd.waist_pitch = teach_end_pitch;
+                arx5_cmd.waist_yaw = teach_end_yaw;
+                
+                // 更新control变量，保持位置
+                arx5_cmd.control_x = teach_end_x - magic_pos[0];
+                arx5_cmd.control_y = teach_end_y - magic_pos[1];
+                arx5_cmd.control_z = teach_end_z - magic_pos[2];
+                arx5_cmd.control_roll = teach_end_roll - magic_angle[2];
+                arx5_cmd.control_pit = teach_end_pitch - magic_angle[0];
+                arx5_cmd.control_yaw = teach_end_yaw - magic_angle[1];
+                
+                // 确保不会触发初始化过程
+                is_starting = false;
+                temp_init = 0;
+                
+                ROS_INFO("Exit teach mode, saved position: x=%f, y=%f, z=%f", teach_end_x, teach_end_y, teach_end_z);
             }
         }
            
- 
-        if (button5_pressed && (!Teleop_Use()->buttons_[5] && !arx5_cmd.key_i ))
+        // 释放条件：手柄按钮5释放 且 按键i释放 且 human_intervention 话题为0
+        if (button5_pressed && (!Teleop_Use()->buttons_[5] && !arx5_cmd.key_i && !human_intervention_flag))
             button5_pressed = false; 
+        
+        // 更新上一次的 human_intervention 状态
+        human_intervention_last_flag = human_intervention_flag;
 
 }
 
@@ -632,47 +724,74 @@ void arx_arm::arm_reset_mode(){
 
 void arx_arm::arm_get_pos(){
 
-            arx5_cmd.base_yaw_t += (Teleop_Use()->axes_[0]/100.0f + arx5_cmd.key_base_yaw/100.0f);
-            // ROS_INFO("arx5_cmd.base_yaw_t>%f,Teleop_Use()->axes_[0]>%f,arx5_cmd.key_base_yaw>%f",arx5_cmd.base_yaw_t,Teleop_Use()->axes_[0],arx5_cmd.key_base_yaw);
-            // 手柄通道+键盘通道+ROS通道  
-            if(abs(arx5_ros_cmd.x)<0.1)
-                ros_move_k_x=500;
-            else ros_move_k_x=100;
+            // 如果使用 master_control 话题控制
+            if(use_master_control) {
+                joy_x_t = master_control_x;
+                joy_y_t = master_control_y;
+                joy_z_t = master_control_z;
+                joy_roll_t = master_control_roll;
+                joy_pitch_t = master_control_pitch;
+                joy_yaw_t = master_control_yaw;
+                
+                arx5_cmd.base_yaw_t = 0.0f; // 或根据需要设置
+                
+                //限位
+                limit_pos();
+                
+                arx5_cmd.reset = true;
+                float reset_temp_k=0.001;
+                
+                arx5_cmd.x            = ramp(joy_x_t, arx5_cmd.x, reset_temp_k);  
+                arx5_cmd.y            = ramp(joy_y_t, arx5_cmd.y, reset_temp_k);
+                arx5_cmd.z            = ramp(joy_z_t, arx5_cmd.z, reset_temp_k);
+                arx5_cmd.base_yaw     = ramp(arx5_cmd.base_yaw_t, arx5_cmd.base_yaw, 0.009);
+                arx5_cmd.gripper_roll = ramp(joy_roll_t, arx5_cmd.gripper_roll, 0.01);
+                arx5_cmd.waist_pitch  = ramp(joy_pitch_t, arx5_cmd.waist_pitch, 0.01);
+                arx5_cmd.waist_yaw    = ramp(joy_yaw_t, arx5_cmd.waist_yaw, 0.01);
+                arx5_cmd.mode = FORWARD;
+            } else {
+                // 原有的手柄+键盘+ROS控制逻辑
+                arx5_cmd.base_yaw_t += (Teleop_Use()->axes_[0]/100.0f + arx5_cmd.key_base_yaw/100.0f);
+                // ROS_INFO("arx5_cmd.base_yaw_t>%f,Teleop_Use()->axes_[0]>%f,arx5_cmd.key_base_yaw>%f",arx5_cmd.base_yaw_t,Teleop_Use()->axes_[0],arx5_cmd.key_base_yaw);
+                // 手柄通道+键盘通道+ROS通道  
+                if(abs(arx5_ros_cmd.x)<0.1)
+                    ros_move_k_x=500;
+                else ros_move_k_x=100;
 
-            if(abs(arx5_ros_cmd.y)<0.1)
-                ros_move_k_y=500;
-            else ros_move_k_y=100;
+                if(abs(arx5_ros_cmd.y)<0.1)
+                    ros_move_k_y=500;
+                else ros_move_k_y=100;
 
-            if(abs(arx5_ros_cmd.z)<0.1)
-                ros_move_k_z=500;
-            else ros_move_k_z=100;
+                if(abs(arx5_ros_cmd.z)<0.1)
+                    ros_move_k_z=500;
+                else ros_move_k_z=100;
 
-            arx5_cmd.control_x += (joystick_projection(Teleop_Use()->axes_[1])/1000.0f+arx5_cmd.key_x/2000.0f  +arx5_ros_cmd.x/ros_move_k_x);
-            arx5_cmd.control_y += (joystick_projection(Teleop_Use()->axes_[3])/1000.0f+arx5_cmd.key_y/2000.0f  +arx5_ros_cmd.y/ros_move_k_y);
-            arx5_cmd.control_z += (joystick_projection(Teleop_Use()->axes_[4])/1000.0f+arx5_cmd.key_z/2000.0f  +arx5_ros_cmd.z/ros_move_k_z);
+                arx5_cmd.control_x += (joystick_projection(Teleop_Use()->axes_[1])/1000.0f+arx5_cmd.key_x/2000.0f  +arx5_ros_cmd.x/ros_move_k_x);
+                arx5_cmd.control_y += (joystick_projection(Teleop_Use()->axes_[3])/1000.0f+arx5_cmd.key_y/2000.0f  +arx5_ros_cmd.y/ros_move_k_y);
+                arx5_cmd.control_z += (joystick_projection(Teleop_Use()->axes_[4])/1000.0f+arx5_cmd.key_z/2000.0f  +arx5_ros_cmd.z/ros_move_k_z);
 
-            if (Teleop_Use()->buttons_[2] == 1){ //手柄控制 - 键位组合
-            arx5_cmd.control_pit -= (Teleop_Use()->axes_[7]/100.0f+arx5_cmd.key_pitch/1000.0f);
-            arx5_cmd.control_yaw   += (Teleop_Use()->axes_[6]/100.0f+arx5_cmd.key_yaw/1000.0f);
-            }else
-            { //arx5_ros_cmd
-            arx5_cmd.control_pit += (arx5_ros_cmd.pitch/1000.0f -arx5_cmd.key_pitch/100.0f);
-            arx5_cmd.control_yaw   += (arx5_ros_cmd.yaw/1000.0f   +arx5_cmd.key_yaw  /100.0f);
-            }
-            arx5_cmd.control_roll  += (-Teleop_Use()->axes_[6]/100.0f-arx5_cmd.key_roll/100.0f + arx5_ros_cmd.roll/1000.0f);
-            
-            joy_x_t = arx5_cmd.control_x      + magic_pos[0];
-            joy_y_t = arx5_cmd.control_y      + magic_pos[1];
-            joy_z_t = arx5_cmd.control_z      + magic_pos[2];
-            joy_pitch_t=arx5_cmd.control_pit  + magic_angle[0];
-            joy_yaw_t  =arx5_cmd.control_yaw  + magic_angle[1];
-            joy_roll_t =arx5_cmd.control_roll + magic_angle[2];
-            
-            //限位
-            limit_pos();
+                if (Teleop_Use()->buttons_[2] == 1){ //手柄控制 - 键位组合
+                arx5_cmd.control_pit -= (Teleop_Use()->axes_[7]/100.0f+arx5_cmd.key_pitch/1000.0f);
+                arx5_cmd.control_yaw   += (Teleop_Use()->axes_[6]/100.0f+arx5_cmd.key_yaw/1000.0f);
+                }else
+                { //arx5_ros_cmd
+                arx5_cmd.control_pit += (arx5_ros_cmd.pitch/1000.0f -arx5_cmd.key_pitch/100.0f);
+                arx5_cmd.control_yaw   += (arx5_ros_cmd.yaw/1000.0f   +arx5_cmd.key_yaw  /100.0f);
+                }
+                arx5_cmd.control_roll  += (-Teleop_Use()->axes_[6]/100.0f-arx5_cmd.key_roll/100.0f + arx5_ros_cmd.roll/1000.0f);
+                
+                joy_x_t = arx5_cmd.control_x      + magic_pos[0];
+                joy_y_t = arx5_cmd.control_y      + magic_pos[1];
+                joy_z_t = arx5_cmd.control_z      + magic_pos[2];
+                joy_pitch_t=arx5_cmd.control_pit  + magic_angle[0];
+                joy_yaw_t  =arx5_cmd.control_yaw  + magic_angle[1];
+                joy_roll_t =arx5_cmd.control_roll + magic_angle[2];
+                
+                //限位
+                limit_pos();
 
-            arx5_cmd.reset = true;
-            float reset_temp_k=0.001;
+                arx5_cmd.reset = true;
+                float reset_temp_k=0.001;
 
                 arx5_cmd.x            = ramp(joy_x_t, arx5_cmd.x, reset_temp_k);  
                 arx5_cmd.y            = ramp(joy_y_t, arx5_cmd.y, reset_temp_k);
@@ -682,6 +801,7 @@ void arx_arm::arm_get_pos(){
                 arx5_cmd.waist_pitch  = ramp(joy_pitch_t, arx5_cmd.waist_pitch, 0.01);
                 arx5_cmd.waist_yaw    = ramp(joy_yaw_t, arx5_cmd.waist_yaw, 0.01);
                 arx5_cmd.mode = FORWARD;
+            }
    
 
 }

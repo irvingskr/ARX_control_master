@@ -1,9 +1,9 @@
-#!/home/dc/anaconda3/envs/dc/bin/python
+#!/home/arxpro/miniconda3/envs/dp3/bin/python
 import time
 import rospy
 import sys
+sys.path.append("/home/arxpro/miniconda3/envs/dp3/lib/python3.8/site-packages")
 from message_filters import ApproximateTimeSynchronizer,Subscriber
-sys.path.append("/home/dc/anaconda3/envs/dc/lib/python3.8/site-packages")
 import numpy as np
 import cv2
 import h5py
@@ -23,10 +23,10 @@ step = 0
 sub_step = 0
 episode_idx = 0
 Max_step = 400 #1000
-Max_episode = 40
+Max_episode = 1
 # directory_path = f'/media/dc/CLEAR/xgxy/dataset20241213' # f'/media/dc/ESD-USB/1120-remote-data'# f'/media/dc/HP2024/data/SCIL/Task4_long_horizon'
 
-directory_path = f'/home/arxpro/ARX_Remote_Control/data/9_3_lemon_plate_2' # f'/media/dc/ESD-USB/1120-remote-data'# f'/media/dc/HP2024/data/SCIL/Task4_long_horizon'
+directory_path = f'/home/arxpro/ARX_Remote_Control/data/test_wxp09071' # f'/media/dc/ESD-USB/1120-remote-data'# f'/media/dc/HP2024/data/SCIL/Task4_long_horizon'
 extension = '.zarr' 
 dataset_path = f'{directory_path}.zarr'
 data_dict = {
@@ -169,7 +169,7 @@ if __name__ =="__main__":
     # image_left = Subscriber("left_camera",Image)
     image_right = Subscriber("right_camera",Image)
     depth = Subscriber("mid_depth_camera",Image)
-    ats = ApproximateTimeSynchronizer([master1,follow1,follow1_pos,image_mid,image_right,depth],slop=0.15,queue_size=40)
+    ats = ApproximateTimeSynchronizer([master1,follow1,follow1_pos,image_mid,image_right,depth],slop=0.02,queue_size=40)
     print(f"Hello")
     ats.registerCallback(callback)
     rospy.spin()
