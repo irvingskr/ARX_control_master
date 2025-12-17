@@ -195,6 +195,7 @@ public:
     float teach_end_roll = 0.0f;
     float teach_end_pitch = 0.0f;
     float teach_end_yaw = 0.0f;
+    float teach_end_gripper = 0.0f;
     
     // 人为干预控制变量
     bool human_intervention_flag = false;      // 接收到的 human_intervention 话题值
@@ -214,6 +215,9 @@ public:
     float upper_bound_pitch = M_PI/2; 
     float lower_bound_yaw = -1.35;
     float upper_bound_yaw = 1.35;
+
+    float lower_bound_gripper = 0;
+    float upper_bound_gripper = 1.0f;
 
     float max_torque = 15;
     float yaw_base2waist = 0.0f;

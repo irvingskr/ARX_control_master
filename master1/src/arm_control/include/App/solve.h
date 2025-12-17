@@ -76,8 +76,8 @@ struct command
     // int key_l_t=0,key_m_t=0,key_n_t=0,key_ya_t=0,key_yb_t=0,key_pb_t=0;   
 
     float reset_k=0.0001;
-    float control_x=0,control_y=0,control_z=0,control_pit=0,control_yaw=0,control_roll=0;
-    float pre_control_x=0,pre_control_y=0,pre_control_z=0,pre_control_pit=0,pre_control_yaw=0,pre_control_roll=0;
+    float control_x=0,control_y=0,control_z=0,control_pit=0,control_yaw=0,control_roll=0,control_gripper=0;
+    float pre_control_x=0,pre_control_y=0,pre_control_z=0,pre_control_pit=0,pre_control_yaw=0,pre_control_roll=0,pre_control_gripper=0;
 
 };
 

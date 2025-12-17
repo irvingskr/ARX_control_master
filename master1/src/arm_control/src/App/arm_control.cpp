@@ -199,6 +199,8 @@ void arx_arm::update_real(command cmd)
         if(control_mode == 0  ||  control_mode == 1)//解算
         {
                 solve.mk(arx5_cmd,current_pos,target_pos,is_teach_mode);
+                // 强制使用gripper命令值
+                target_pos[6] = arx5_cmd.gripper;
 
                 if(teach2pos_returning ){
                     is_starting=1;
@@ -281,7 +283,7 @@ void arx_arm::motor_control()
                         CAN_Handlej.Send_Moto_2(5, 30, 0.8, target_pos[3], 0, solve.joint_torque[3]); usleep(200);
                         CAN_Handlej.Send_Moto_2(6, 25, 0.8, target_pos[4], 0, solve.joint_torque[4]); usleep(200);
                         CAN_Handlej.Send_Moto_2(7, 10, 1  , target_pos[5], 0, solve.joint_torque[5]); usleep(200);
-                        CAN_Handlej.Send_Moto_2(8, 0, 0 , 0, 0, 0); usleep(200);
+                        CAN_Handlej.Send_Moto_2(8, 10, 1  , target_pos[6], 0, 0);  usleep(200); 
                 }
 
     }else
@@ -292,6 +294,7 @@ void arx_arm::motor_control()
                     CAN_Handlej.Send_Moto_2(5, 0, 1 , 0, 0, 0);usleep(200);
                     CAN_Handlej.Send_Moto_2(6, 0, 1 , 0, 0, 0);usleep(200);
                     CAN_Handlej.Send_Moto_2(7, 0, 1 , 0, 0, 0);usleep(200); 
+                    CAN_Handlej.Send_Moto_2(8, 0, 1 , 0, 0, 0);usleep(200);
                     ROS_WARN("safe mode!!!!!!!!!");
 
     }
@@ -303,7 +306,7 @@ void arx_arm::init_step()
    temp_init++;
    if(temp_init>2)
    {
-            for (int i = 0; i < 7; i++)
+            for (int i = 0; i < 7; i++)             
             {
                 target_pos[i] = ramp(0, target_pos[i], 0.003); //0.003   0.001
             }
@@ -343,8 +346,7 @@ void arx_arm::init_step()
             CAN_Handlej.Send_Moto_2(5, 30, 0.8, target_pos[3], 0, 0);usleep(200);
             CAN_Handlej.Send_Moto_2(6, 25, 0.8, target_pos[4], 0, 0);usleep(200);
             CAN_Handlej.Send_Moto_2(7, 10, 1, target_pos[5], 0, 0);usleep(200); 
-
-            CAN_Handlej.Send_Moto_2(8, 10, 1, target_pos[6], 0, 0);usleep(200); 
+            CAN_Handlej.Send_Moto_2(8, 10, 1, target_pos[6], 0, 0);usleep(200);
 
 
    }
@@ -491,16 +493,24 @@ void arx_arm::getKey(char key_t) {
     arx5_cmd.key_yaw = 0;  
 
     if(key_t == 'u')
-    arx5_cmd.key_u =arx5_cmd.key_u_t=1;
-    else arx5_cmd.key_u_t++;
-    if(arx5_cmd.key_u_t>wait_key)
-    arx5_cmd.key_u =0;
+    arx5_cmd.key_gripper =arx5_cmd.key_gripper_t= 1;  // 打开夹爪
+    else if(key_t == 'j')
+    arx5_cmd.key_gripper =arx5_cmd.key_gripper_t= -1;  // 关闭夹爪
+    else arx5_cmd.key_gripper_t++;
+    if(arx5_cmd.key_gripper_t>wait_key)
+    arx5_cmd.key_gripper = 0;
 
-    if(key_t == 'j')
-    arx5_cmd.key_j =arx5_cmd.key_j_t=1;
-    else arx5_cmd.key_j_t++;
-    if(arx5_cmd.key_j_t>wait_key)
-    arx5_cmd.key_j =0;
+    // if(key_t == 'u')
+    // arx5_cmd.key_u =arx5_cmd.key_u_t=1;
+    // else arx5_cmd.key_u_t++;
+    // if(arx5_cmd.key_u_t>wait_key)
+    // arx5_cmd.key_u =0;
+
+    // if(key_t == 'j')
+    // arx5_cmd.key_j =arx5_cmd.key_j_t=1;
+    // else arx5_cmd.key_j_t++;
+    // if(arx5_cmd.key_j_t>wait_key)
+    // arx5_cmd.key_j =0;
 
     if(key_t == 'h')
     arx5_cmd.key_h =arx5_cmd.key_h_t=1;
@@ -546,9 +556,10 @@ void arx_arm::arm_torque_mode()
             teach_end_roll = solve.solve_pos[3];
             teach_end_pitch = solve.solve_pos[4];
             teach_end_yaw = solve.solve_pos[5];
+            teach_end_gripper = current_pos[6];
             
             // 将当前关节位置设置为目标位置
-            for (int i = 0; i < 6; i++)
+            for (int i = 0; i < 7; i++)
             {
                 target_pos[i] = current_pos[i];
             }
@@ -560,6 +571,7 @@ void arx_arm::arm_torque_mode()
             arx5_cmd.gripper_roll = teach_end_roll;
             arx5_cmd.waist_pitch = teach_end_pitch;
             arx5_cmd.waist_yaw = teach_end_yaw;
+            arx5_cmd.gripper = teach_end_gripper;  
             
             // 更新control变量
             arx5_cmd.control_x = teach_end_x - magic_pos[0];
@@ -568,7 +580,8 @@ void arx_arm::arm_torque_mode()
             arx5_cmd.control_roll = teach_end_roll - magic_angle[2];
             arx5_cmd.control_pit = teach_end_pitch - magic_angle[0];
             arx5_cmd.control_yaw = teach_end_yaw - magic_angle[1];
-            
+            arx5_cmd.control_gripper = teach_end_gripper;
+
             // 确保不会触发初始化过程
             is_starting = false;
             temp_init = 0;
@@ -592,7 +605,7 @@ void arx_arm::arm_torque_mode()
                 // 进入力矩示教模式，暂停 master_control 控制
                 use_master_control = false;
                 
-                for (int i = 0; i < 6; i++)
+                for (int i = 0; i < 7; i++)
                 {
                     prev_target_pos[i] = target_pos[i];
                 }
@@ -614,9 +627,10 @@ void arx_arm::arm_torque_mode()
                 teach_end_roll = solve.solve_pos[3];
                 teach_end_pitch = solve.solve_pos[4];
                 teach_end_yaw = solve.solve_pos[5];
+                teach_end_gripper = current_pos[6];
                 
                 // 将当前关节位置设置为目标位置，用于平滑过渡
-                for (int i = 0; i < 6; i++)
+                for (int i = 0; i < 7; i++)
                 {
                     target_pos[i] = current_pos[i];
                 }
@@ -628,6 +642,7 @@ void arx_arm::arm_torque_mode()
                 arx5_cmd.gripper_roll = teach_end_roll;
                 arx5_cmd.waist_pitch = teach_end_pitch;
                 arx5_cmd.waist_yaw = teach_end_yaw;
+                arx5_cmd.gripper = teach_end_gripper;
                 
                 // 更新control变量，保持位置
                 arx5_cmd.control_x = teach_end_x - magic_pos[0];
@@ -636,6 +651,7 @@ void arx_arm::arm_torque_mode()
                 arx5_cmd.control_roll = teach_end_roll - magic_angle[2];
                 arx5_cmd.control_pit = teach_end_pitch - magic_angle[0];
                 arx5_cmd.control_yaw = teach_end_yaw - magic_angle[1];
+                arx5_cmd.control_gripper = teach_end_gripper;
                 
                 // 确保不会触发初始化过程
                 is_starting = false;
@@ -674,6 +690,7 @@ void arx_arm::arm_replay_mode()
                 arx5_cmd.base_yaw     = arx5_cmd.base_yaw_t     =      0 ;
                 arx5_cmd.gripper_roll = arx5_cmd.gripper_roll_t =arx5_cmd.control_roll  = joy_roll_t   =joy_roll       =0      ;
                 arx5_cmd.waist_yaw    = arx5_cmd.waist_yaw_t    =arx5_cmd.control_yaw   = joy_yaw_t    =joy_yaw        =0      ;
+                arx5_cmd.gripper      = arx5_cmd.gripper_t      =arx5_cmd.control_gripper= joy_gripper_t  =joy_gripper    =0      ;
                 arx5_cmd.mode = FORWARD;                
 
                 }else{//执行动作
@@ -708,6 +725,7 @@ void arx_arm::arm_reset_mode(){
             arx5_cmd.control_roll=ramp(0.0, arx5_cmd.control_roll, 0.1); 
             arx5_cmd.control_pit=ramp(0.0, arx5_cmd.control_pit, 0.1);
             arx5_cmd.control_yaw=ramp(0.0, arx5_cmd.control_yaw, 0.1);   
+            arx5_cmd.gripper=ramp(0.0, arx5_cmd.gripper, 0.01);  
 
             arx5_cmd.control_x=ramp(0.0, arx5_cmd.control_x, 0.0006); 
 
@@ -732,10 +750,11 @@ void arx_arm::arm_get_pos(){
                 joy_roll_t = master_control_roll;
                 joy_pitch_t = master_control_pitch;
                 joy_yaw_t = master_control_yaw;
+                joy_gripper_t = master_control_gripper;  
                 
                 arx5_cmd.base_yaw_t = 0.0f; // 或根据需要设置
                 
-                //限位
+                //限位  
                 limit_pos();
                 
                 arx5_cmd.reset = true;
@@ -748,6 +767,7 @@ void arx_arm::arm_get_pos(){
                 arx5_cmd.gripper_roll = ramp(joy_roll_t, arx5_cmd.gripper_roll, 0.01);
                 arx5_cmd.waist_pitch  = ramp(joy_pitch_t, arx5_cmd.waist_pitch, 0.01);
                 arx5_cmd.waist_yaw    = ramp(joy_yaw_t, arx5_cmd.waist_yaw, 0.01);
+                arx5_cmd.gripper      = ramp(joy_gripper_t, arx5_cmd.gripper, 0.01); 
                 arx5_cmd.mode = FORWARD;
             } else {
                 // 原有的手柄+键盘+ROS控制逻辑
@@ -779,13 +799,15 @@ void arx_arm::arm_get_pos(){
                 arx5_cmd.control_yaw   += (arx5_ros_cmd.yaw/1000.0f   +arx5_cmd.key_yaw  /100.0f);
                 }
                 arx5_cmd.control_roll  += (-Teleop_Use()->axes_[6]/100.0f-arx5_cmd.key_roll/100.0f + arx5_ros_cmd.roll/1000.0f);
-                
+                arx5_cmd.control_gripper += (arx5_cmd.key_gripper/600.0f + arx5_ros_cmd.gripper/6000.0f);
+
                 joy_x_t = arx5_cmd.control_x      + magic_pos[0];
                 joy_y_t = arx5_cmd.control_y      + magic_pos[1];
                 joy_z_t = arx5_cmd.control_z      + magic_pos[2];
                 joy_pitch_t=arx5_cmd.control_pit  + magic_angle[0];
                 joy_yaw_t  =arx5_cmd.control_yaw  + magic_angle[1];
                 joy_roll_t =arx5_cmd.control_roll + magic_angle[2];
+                joy_gripper_t = arx5_cmd.control_gripper;
                 
                 //限位
                 limit_pos();
@@ -800,6 +822,8 @@ void arx_arm::arm_get_pos(){
                 arx5_cmd.gripper_roll = ramp(joy_roll_t, arx5_cmd.gripper_roll, 0.01);
                 arx5_cmd.waist_pitch  = ramp(joy_pitch_t, arx5_cmd.waist_pitch, 0.01);
                 arx5_cmd.waist_yaw    = ramp(joy_yaw_t, arx5_cmd.waist_yaw, 0.01);
+                arx5_cmd.gripper      = ramp(joy_gripper_t, arx5_cmd.gripper, 0.01);
+                
                 arx5_cmd.mode = FORWARD;
             }
    
@@ -849,21 +873,22 @@ void arx_arm::limit_pos()
         joy_pitch_t = limit<float>(joy_pitch_t, lower_bound_pitch, upper_bound_pitch);
         joy_yaw_t   = limit<float>(joy_yaw_t, lower_bound_yaw, upper_bound_yaw);
         joy_roll_t  = limit<float>(joy_roll_t, lower_bound_sim[ROLL], upper_bound_sim[ROLL]);
-
+        joy_gripper_t = limit<float>(joy_gripper_t, lower_bound_gripper, upper_bound_gripper);
+        
         arx5_cmd.control_x = limit<float>(arx5_cmd.control_x, lower_bound_waist[0], upper_bound_waist[0]);
         arx5_cmd.control_y = limit<float>(arx5_cmd.control_y, lower_bound_waist[1], upper_bound_waist[1]);
         arx5_cmd.control_z = limit<float>(arx5_cmd.control_z, lower_bound_waist[2], upper_bound_waist[2]);
         arx5_cmd.control_pit   = limit<float>(arx5_cmd.control_pit, lower_bound_pitch, upper_bound_pitch);
         arx5_cmd.control_yaw   = limit<float>(arx5_cmd.control_yaw, lower_bound_yaw, upper_bound_yaw);
         arx5_cmd.control_roll  = limit<float>(arx5_cmd.control_roll, lower_bound_sim[ROLL], upper_bound_sim[ROLL]);
+        arx5_cmd.control_gripper = limit<float>(arx5_cmd.control_gripper, lower_bound_gripper, upper_bound_gripper);
 
         magic_pos[0] = limit<float>(magic_pos[0], lower_bound_waist[0], upper_bound_waist[0]);
         magic_pos[1] = limit<float>(magic_pos[1], lower_bound_waist[1], upper_bound_waist[1]);
         magic_pos[2] = limit<float>(magic_pos[2], lower_bound_waist[2], upper_bound_waist[2]);
         magic_angle[0] = limit<float>(magic_angle[0], lower_bound_pitch, upper_bound_pitch);
         magic_angle[1] = limit<float>(magic_angle[1], lower_bound_yaw, upper_bound_yaw);
-        magic_angle[2] = limit<float>(magic_angle[2], lower_bound_sim[ROLL], upper_bound_sim[ROLL]);        
-
+        magic_angle[2] = limit<float>(magic_angle[2], lower_bound_sim[ROLL], upper_bound_sim[ROLL]);
 }
 
 
@@ -876,6 +901,7 @@ void arx_arm::cmd_init()
     arx5_cmd.control_pit     =      0 ;
     arx5_cmd.control_yaw = joy_roll_t        =0      ;
     arx5_cmd.control_roll   =arx5_cmd.control_yaw   = joy_yaw_t           =0      ;
+    arx5_cmd.gripper      = arx5_cmd.gripper_t      =arx5_cmd.control_gripper= joy_gripper_t  =joy_gripper    =0      ;
     arx5_cmd.mode = FORWARD;
 
 }
