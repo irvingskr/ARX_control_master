@@ -44,17 +44,19 @@ int main(int argc, char **argv)
                                       ARX_ARM.ros_control_pos_t[6] = msg->joint_pos[6];
                                   });
 
-    // 订阅主臂位置控制话题
-    ros::Subscriber sub_master_control = node.subscribe<arm_control::PosCmd>("/master_control", 10,
-                                  [&ARX_ARM](const arm_control::PosCmd::ConstPtr& msg) {
-                                      ARX_ARM.master_control_x = msg->x;
-                                      ARX_ARM.master_control_y = msg->y;
-                                      ARX_ARM.master_control_z = msg->z;
-                                      ARX_ARM.master_control_roll = msg->roll;
-                                      ARX_ARM.master_control_pitch = msg->pitch;
-                                      ARX_ARM.master_control_yaw = msg->yaw;
-                                      ARX_ARM.master_control_gripper = msg->gripper;
-                                      ARX_ARM.use_master_control = true;
+    // 订阅 /master_joint_control: 从臂关节位置 → 主臂跟随
+    ros::Subscriber sub_master_joint = node.subscribe<arm_control::JointControl>("/master_joint_control", 10,
+                                  [&ARX_ARM](const arm_control::JointControl::ConstPtr& msg) {
+                                      for(int i=0;i<7;i++) {
+                                          ARX_ARM.follow_joint_pos[i] = msg->joint_pos[i];
+                                      }
+                                      if(!ARX_ARM.follow_joint_initialized) {
+                                          for(int i=0;i<7;i++) {
+                                              ARX_ARM.follow_joint_pos_smoothed[i] = msg->joint_pos[i];
+                                          }
+                                          ARX_ARM.follow_joint_initialized = true;
+                                      }
+                                      ARX_ARM.use_follow_joint_tracking = true;
                                   });
 
     // 订阅人为干预话题
@@ -104,7 +106,7 @@ int main(int argc, char **argv)
                 msg_joint.joint_cur[6] = ARX_ARM.current_torque[6];
                 //ARX_ARM.current_pos[6]=ARX_ARM.Data_process(ARX_ARM.current_pos[6]);
                 msg_joint.joint_pos[6]=ARX_ARM.current_pos[6]*12; // 映射放大
-                msg_joint.mode = ARX_ARM.arx5_cmd.key_t;
+                msg_joint.mode = ARX_ARM.is_teach_mode ? 2 : ARX_ARM.arx5_cmd.key_t;
             ros::Time time=ros::Time::now();
             msg_joint.header.stamp = time;
             pub_joint.publish(msg_joint);

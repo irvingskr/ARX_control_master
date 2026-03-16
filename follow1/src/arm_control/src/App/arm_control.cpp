@@ -244,13 +244,16 @@ float arx_arm::Data_process(float& Data)
 }
 void arx_arm::motor_control()
 {
-    target_pos_temp[0]=ramp( ros_control_pos_t[0], target_pos_temp[0], 0.03);    
-    target_pos_temp[1]=ramp( ros_control_pos_t[1], target_pos_temp[1], 0.03);
-    target_pos_temp[2]=ramp( ros_control_pos_t[2], target_pos_temp[2], 0.03);
-    target_pos_temp[3]=ramp( ros_control_pos_t[3], target_pos_temp[3], 0.03);
-    target_pos_temp[4]=ramp( ros_control_pos_t[4], target_pos_temp[4], 0.03);
-    target_pos_temp[5]=ramp( ros_control_pos_t[5], target_pos_temp[5], 0.03);
-    target_pos_temp[6]=ramp( ros_control_pos_t[6], target_pos_temp[6], 1);
+    bool follow_ik_active = use_follow_control && !human_intervention_flag && !is_teach_mode && record_mode != 2;
+    float* motor_goal = follow_ik_active ? target_pos : ros_control_pos_t;
+
+    target_pos_temp[0]=ramp( motor_goal[0], target_pos_temp[0], 0.03f);
+    target_pos_temp[1]=ramp( motor_goal[1], target_pos_temp[1], 0.03f);
+    target_pos_temp[2]=ramp( motor_goal[2], target_pos_temp[2], 0.03f);
+    target_pos_temp[3]=ramp( motor_goal[3], target_pos_temp[3], 0.03f);
+    target_pos_temp[4]=ramp( motor_goal[4], target_pos_temp[4], 0.03f);
+    target_pos_temp[5]=ramp( motor_goal[5], target_pos_temp[5], 0.03f);
+    target_pos_temp[6]=ramp( follow_ik_active ? follow_control_gripper : ros_control_pos_t[6], target_pos_temp[6], 1);
 
     target_pos_temp[6]=limit<float>(target_pos_temp[6],0,4.5);
 
@@ -528,35 +531,66 @@ void arx_arm::getKey(char key_t) {
 
 void arx_arm::arm_torque_mode()
 {
-        if( (Teleop_Use()->buttons_[5] == 1 && !button5_pressed)  || ( arx5_cmd.key_i ==1 &&  !button5_pressed) )
-        {
-            button5_pressed = true;
-            if (!is_torque_control) 
-            {
-                init_kp=10,init_kp_4=20,init_kd=init_kd_4=init_kd_6=init_kp_4=0; 
+        // ========== human_intervention 直接覆盖 ==========
+
+        // 上升沿: 强制进入示教
+        if (human_intervention_flag && !human_intervention_last_flag) {
+            if (!is_torque_control) {
+                init_kp=10,init_kp_4=20,init_kd=init_kd_4=init_kd_6=init_kp_4=0;
                 is_teach_mode = true;
                 is_torque_control = true;
                 for (int i = 0; i < 6; i++)
-                {
                     prev_target_pos[i] = target_pos[i];
-                }
-            }else
-            {   
-                is_teach_mode = false;
-                is_torque_control = false;
-                teach2pos_returning = true;
-                for (int i = 0; i < 6; i++)
-                {
-                    target_pos[i] = current_pos[i];
-                }
-                
+                ROS_WARN("Follow1 Human intervention: Force enter torque mode!");
             }
+            button5_pressed = true;
         }
-           
- 
-        if (button5_pressed && (!Teleop_Use()->buttons_[5] && !arx5_cmd.key_i ))
-            button5_pressed = false; 
 
+        // 下降沿: 强制退出示教
+        if (!human_intervention_flag && human_intervention_last_flag && is_torque_control) {
+            ROS_WARN("Follow1 Human intervention: Force exit torque mode!");
+            is_teach_mode = false;
+            is_torque_control = false;
+            teach2pos_returning = false;
+            sync_to_current_fk();
+            for (int i = 0; i < 7; i++)
+                target_pos[i] = current_pos[i];
+            is_starting = false;
+            temp_init = 0;
+            button5_pressed = true;
+        }
+
+        // ========== i 键 / 手柄按钮5 toggle (仅 human_intervention=false 时生效) ==========
+
+        if (!human_intervention_flag) {
+            if( (Teleop_Use()->buttons_[5] == 1 && !button5_pressed) || (arx5_cmd.key_i == 1 && !button5_pressed) )
+            {
+                button5_pressed = true;
+                if (!is_torque_control)
+                {
+                    init_kp=10,init_kp_4=20,init_kd=init_kd_4=init_kd_6=init_kp_4=0;
+                    is_teach_mode = true;
+                    is_torque_control = true;
+                    for (int i = 0; i < 6; i++)
+                        prev_target_pos[i] = target_pos[i];
+                } else {
+                    is_teach_mode = false;
+                    is_torque_control = false;
+                    teach2pos_returning = false;
+                    sync_to_current_fk();
+                    for (int i = 0; i < 7; i++)
+                        target_pos[i] = current_pos[i];
+                    is_starting = false;
+                    temp_init = 0;
+                }
+            }
+
+            if (button5_pressed && !Teleop_Use()->buttons_[5] && !arx5_cmd.key_i)
+                button5_pressed = false;
+        }
+
+        // 更新上一次的 human_intervention 状态
+        human_intervention_last_flag = human_intervention_flag;
 }
 
 void arx_arm::arm_replay_mode()
@@ -629,9 +663,44 @@ void arx_arm::arm_reset_mode(){
 
 void arx_arm::arm_get_pos(){
 
+            // 检测主臂从示教退出(record_mode从2变非2)
+            if(prev_record_mode == 2 && record_mode != 2 && use_follow_control) {
+                sync_to_current_fk();
+            }
+            prev_record_mode = record_mode;
+
+            // follow_control 模式: 非示教、非人为干预、主臂非示教(mode!=2)时走话题控制
+            if(use_follow_control && !human_intervention_flag && !is_teach_mode && record_mode != 2) {
+
+                joy_x_t = follow_control_x;
+                joy_y_t = follow_control_y;
+                joy_z_t = follow_control_z;
+                joy_roll_t = follow_control_roll;
+                joy_pitch_t = follow_control_pitch;
+                joy_yaw_t = follow_control_yaw;
+
+                arx5_cmd.base_yaw_t = 0.0f;
+
+                limit_pos();
+
+                arx5_cmd.reset = true;
+                float reset_temp_k=0.001;
+
+                arx5_cmd.x            = ramp(joy_x_t, arx5_cmd.x, reset_temp_k);
+                arx5_cmd.y            = ramp(joy_y_t, arx5_cmd.y, reset_temp_k);
+                arx5_cmd.z            = ramp(joy_z_t, arx5_cmd.z, reset_temp_k);
+                arx5_cmd.base_yaw     = ramp(arx5_cmd.base_yaw_t, arx5_cmd.base_yaw, 0.009);
+                arx5_cmd.gripper_roll = ramp(joy_roll_t, arx5_cmd.gripper_roll, 0.01);
+                arx5_cmd.waist_pitch  = ramp(joy_pitch_t, arx5_cmd.waist_pitch, 0.01);
+                arx5_cmd.waist_yaw    = ramp(joy_yaw_t, arx5_cmd.waist_yaw, 0.01);
+                arx5_cmd.mode = FORWARD;
+
+                return;
+            }
+
             arx5_cmd.base_yaw_t += (Teleop_Use()->axes_[0]/100.0f + arx5_cmd.key_base_yaw/100.0f);
             // ROS_INFO("arx5_cmd.base_yaw_t>%f,Teleop_Use()->axes_[0]>%f,arx5_cmd.key_base_yaw>%f",arx5_cmd.base_yaw_t,Teleop_Use()->axes_[0],arx5_cmd.key_base_yaw);
-            // 手柄通道+键盘通道+ROS通道  
+            // 手柄通道+键盘通道+ROS通道
             if(abs(arx5_ros_cmd.x)<0.1)
                 ros_move_k_x=500;
             else ros_move_k_x=100;
@@ -733,6 +802,29 @@ void arx_arm::limit_pos()
         magic_pos[2] = limit<float>(magic_pos[2], lower_bound_waist[2], upper_bound_waist[2]);
         magic_angle[0] = limit<float>(magic_angle[0], lower_bound_pitch, upper_bound_pitch);
         magic_angle[1] = limit<float>(magic_angle[1], lower_bound_yaw, upper_bound_yaw);
-        magic_angle[2] = limit<float>(magic_angle[2], lower_bound_sim[ROLL], upper_bound_sim[ROLL]);        
+        magic_angle[2] = limit<float>(magic_angle[2], lower_bound_sim[ROLL], upper_bound_sim[ROLL]);
 
+}
+
+void arx_arm::sync_to_current_fk()
+{
+    arx5_cmd.x = solve.solve_pos[0];
+    arx5_cmd.y = solve.solve_pos[1];
+    arx5_cmd.z = solve.solve_pos[2];
+    arx5_cmd.gripper_roll = solve.solve_pos[3];
+    arx5_cmd.waist_pitch = solve.solve_pos[4];
+    arx5_cmd.waist_yaw = solve.solve_pos[5];
+    arx5_cmd.control_x = solve.solve_pos[0] - magic_pos[0];
+    arx5_cmd.control_y = solve.solve_pos[1] - magic_pos[1];
+    arx5_cmd.control_z = solve.solve_pos[2] - magic_pos[2];
+    arx5_cmd.control_roll = solve.solve_pos[3] - magic_angle[2];
+    arx5_cmd.control_pit = solve.solve_pos[4] - magic_angle[0];
+    arx5_cmd.control_yaw = solve.solve_pos[5] - magic_angle[1];
+    follow_control_x = solve.solve_pos[0];
+    follow_control_y = solve.solve_pos[1];
+    follow_control_z = solve.solve_pos[2];
+    follow_control_roll = solve.solve_pos[3];
+    follow_control_pitch = solve.solve_pos[4];
+    follow_control_yaw = solve.solve_pos[5];
+    follow_control_gripper = current_pos[6];
 }

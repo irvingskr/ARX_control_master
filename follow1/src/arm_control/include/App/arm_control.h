@@ -326,9 +326,19 @@ public:
     void arm_get_pos();
     //Recordandreplay teach_mode
     void arm_teach_mode();  
-    void limit_pos();   
+    void limit_pos();
+    void sync_to_current_fk(); // 同步arx5_cmd和follow_control到当前FK位姿
     float follow_pos_k=1.0f;
     int record_mode=0;
+    int prev_record_mode=0;
+
+    // follow_control: 从臂末端位姿控制
+    bool use_follow_control = false;
+    float follow_control_x=0, follow_control_y=0, follow_control_z=0;
+    float follow_control_roll=0, follow_control_pitch=0, follow_control_yaw=0;
+    float follow_control_gripper=0;
+    bool human_intervention_flag = false;
+    bool human_intervention_last_flag = false;
     int teach_press_count = 0;
     void cur_change();
 

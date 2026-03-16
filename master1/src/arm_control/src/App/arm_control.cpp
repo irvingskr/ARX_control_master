@@ -198,16 +198,25 @@ void arx_arm::update_real(command cmd)
     {
         if(control_mode == 0  ||  control_mode == 1)//解算
         {
-                solve.mk(arx5_cmd,current_pos,target_pos,is_teach_mode);
-                // 强制使用gripper命令值
-                target_pos[6] = arx5_cmd.gripper;
+                // 跟随模式: 直接使用从臂关节位置(不含夹爪)，跳过IK
+                if(use_follow_joint_tracking && !is_teach_mode) {
+                    for(int i=0;i<6;i++) {
+                        target_pos[i] = follow_joint_pos_smoothed[i];
+                    }
+                    // 夹爪保持原有控制逻辑
+                    target_pos[6] = arx5_cmd.gripper;
+                } else {
+                    solve.mk(arx5_cmd,current_pos,target_pos,is_teach_mode);
+                    // 强制使用gripper命令值
+                    target_pos[6] = arx5_cmd.gripper;
+                }
 
                 if(teach2pos_returning ){
                     is_starting=1;
                 }else{
                     is_starting=0;
                     temp_init=0;
-                    motor_control(); 
+                    motor_control();
                 }
 
         }
@@ -246,8 +255,8 @@ float arx_arm::Data_process(float& Data)
 }
 void arx_arm::motor_control()
 {
-    float pos_ramp_k=10;
-    target_pos_temp[0]=ramp( target_pos[0], target_pos_temp[0], pos_ramp_k);    
+    float pos_ramp_k = (use_follow_joint_tracking && !is_teach_mode) ? 0.01f : 10.0f;
+    target_pos_temp[0]=ramp( target_pos[0], target_pos_temp[0], pos_ramp_k);
     target_pos_temp[1]=ramp( target_pos[1], target_pos_temp[1], pos_ramp_k);
     target_pos_temp[2]=ramp( target_pos[2], target_pos_temp[2], pos_ramp_k);
     target_pos_temp[3]=ramp( target_pos[3], target_pos_temp[3], pos_ramp_k);
@@ -270,7 +279,7 @@ void arx_arm::motor_control()
                 CAN_Handlej.Send_Moto_2(5, 0, 0, 0, 0,  solve.joint_torque[3]);usleep(200);
                 CAN_Handlej.Send_Moto_2(6, 0, 0, 0, 0,  solve.joint_torque[4]);usleep(200);
                 CAN_Handlej.Send_Moto_2(7, 0, 0, 0, 0,  solve.joint_torque[5]);usleep(200);
-                CAN_Handlej.Send_Moto_2(8, 0, 0.3, 0, 0,  ros_control_cur_t[6]*0.6);  usleep(200);
+                CAN_Handlej.Send_Moto_2(8, 0, 0.3, 0, 0,  0);  usleep(200); // 关闭夹爪力矩反馈
 
             } else {
                        if(control_mode == 0 || control_mode==2){
@@ -541,133 +550,97 @@ void arx_arm::getKey(char key_t) {
 
 void arx_arm::arm_torque_mode()
 {
-        // 检测 human_intervention 从 1 变为 0（下降沿），强制退出 torque 模式
+        // ========== human_intervention 直接覆盖 (独立于 i/button5 的 toggle 逻辑) ==========
+
+        // human_intervention 上升沿: 强制进入示教
+        if (human_intervention_flag && !human_intervention_last_flag) {
+            if (!is_torque_control) {
+                init_kp=10,init_kp_4=20,init_kd=init_kd_4=init_kd_6=init_kp_4=0;
+                is_teach_mode = true;
+                is_torque_control = true;
+                for (int i = 0; i < 6; i++)
+                    prev_target_pos[i] = target_pos[i];
+                ROS_WARN("Human intervention: Force enter torque mode!");
+            }
+            // 锁定 button5，防止 i 键在 human_intervention 期间退出
+            button5_pressed = true;
+        }
+
+        // human_intervention 下降沿: 强制退出示教
         if (!human_intervention_flag && human_intervention_last_flag && is_torque_control) {
             ROS_WARN("Human intervention: Force exit torque mode!");
-            
             is_teach_mode = false;
             is_torque_control = false;
             teach2pos_returning = false;
-            
-            // 保存力矩示教结束时的末端位置
-            teach_end_x = solve.solve_pos[0];
-            teach_end_y = solve.solve_pos[1];
-            teach_end_z = solve.solve_pos[2];
-            teach_end_roll = solve.solve_pos[3];
-            teach_end_pitch = solve.solve_pos[4];
-            teach_end_yaw = solve.solve_pos[5];
-            teach_end_gripper = current_pos[6];
-            
-            // 将当前关节位置设置为目标位置
-            for (int i = 0; i < 7; i++)
-            {
-                target_pos[i] = current_pos[i];
-            }
-            
-            // 更新arx5_cmd为示教结束位置
-            arx5_cmd.x = teach_end_x;
-            arx5_cmd.y = teach_end_y;
-            arx5_cmd.z = teach_end_z;
-            arx5_cmd.gripper_roll = teach_end_roll;
-            arx5_cmd.waist_pitch = teach_end_pitch;
-            arx5_cmd.waist_yaw = teach_end_yaw;
-            arx5_cmd.gripper = teach_end_gripper;  
-            
-            // 更新control变量
-            arx5_cmd.control_x = teach_end_x - magic_pos[0];
-            arx5_cmd.control_y = teach_end_y - magic_pos[1];
-            arx5_cmd.control_z = teach_end_z - magic_pos[2];
-            arx5_cmd.control_roll = teach_end_roll - magic_angle[2];
-            arx5_cmd.control_pit = teach_end_pitch - magic_angle[0];
-            arx5_cmd.control_yaw = teach_end_yaw - magic_angle[1];
-            arx5_cmd.control_gripper = teach_end_gripper;
-
-            // 确保不会触发初始化过程
-            is_starting = false;
-            temp_init = 0;
-            
-            // 释放按钮锁
-            button5_pressed = false;
-            
-            ROS_INFO("Exit teach mode, saved position: x=%f, y=%f, z=%f", teach_end_x, teach_end_y, teach_end_z);
-        }
-        
-        // 进入 torque 模式的条件：手柄按钮5 或 按键i 或 human_intervention 话题为1
-        if( (Teleop_Use()->buttons_[5] == 1 && !button5_pressed) || (arx5_cmd.key_i == 1 && !button5_pressed) || (human_intervention_flag && !button5_pressed) )
-        {
+            exit_teach_sync();
             button5_pressed = true;
-            if (!is_torque_control) 
-            {
-                init_kp=10,init_kp_4=20,init_kd=init_kd_4=init_kd_6=init_kp_4=0; 
-                is_teach_mode = true;
-                is_torque_control = true;
-                
-                // 进入力矩示教模式，暂停 master_control 控制
-                use_master_control = false;
-                
-                for (int i = 0; i < 7; i++)
-                {
-                    prev_target_pos[i] = target_pos[i];
-                }
-                
-                if (human_intervention_flag) {
-                    ROS_WARN("Human intervention: Force enter torque mode!");
-                }
-            }else if(!human_intervention_flag)
-            {   
-                is_teach_mode = false;
-                is_torque_control = false;
-                // 不设置 teach2pos_returning，避免触发 init_step
-                teach2pos_returning = false;
-                
-                // 保存力矩示教结束时的末端位置（来自solve.solve_pos）
-                teach_end_x = solve.solve_pos[0];
-                teach_end_y = solve.solve_pos[1];
-                teach_end_z = solve.solve_pos[2];
-                teach_end_roll = solve.solve_pos[3];
-                teach_end_pitch = solve.solve_pos[4];
-                teach_end_yaw = solve.solve_pos[5];
-                teach_end_gripper = current_pos[6];
-                
-                // 将当前关节位置设置为目标位置，用于平滑过渡
-                for (int i = 0; i < 7; i++)
-                {
-                    target_pos[i] = current_pos[i];
-                }
-                
-                // 更新arx5_cmd为示教结束位置，防止下次位置控制时跳回原点
-                arx5_cmd.x = teach_end_x;
-                arx5_cmd.y = teach_end_y;
-                arx5_cmd.z = teach_end_z;
-                arx5_cmd.gripper_roll = teach_end_roll;
-                arx5_cmd.waist_pitch = teach_end_pitch;
-                arx5_cmd.waist_yaw = teach_end_yaw;
-                arx5_cmd.gripper = teach_end_gripper;
-                
-                // 更新control变量，保持位置
-                arx5_cmd.control_x = teach_end_x - magic_pos[0];
-                arx5_cmd.control_y = teach_end_y - magic_pos[1];
-                arx5_cmd.control_z = teach_end_z - magic_pos[2];
-                arx5_cmd.control_roll = teach_end_roll - magic_angle[2];
-                arx5_cmd.control_pit = teach_end_pitch - magic_angle[0];
-                arx5_cmd.control_yaw = teach_end_yaw - magic_angle[1];
-                arx5_cmd.control_gripper = teach_end_gripper;
-                
-                // 确保不会触发初始化过程
-                is_starting = false;
-                temp_init = 0;
-                
-                ROS_INFO("Exit teach mode, saved position: x=%f, y=%f, z=%f", teach_end_x, teach_end_y, teach_end_z);
-            }
         }
-           
-        // 释放条件：手柄按钮5释放 且 按键i释放 且 human_intervention 话题为0
-        if (button5_pressed && (!Teleop_Use()->buttons_[5] && !arx5_cmd.key_i && !human_intervention_flag))
-            button5_pressed = false; 
-        
+
+        // ========== i 键 / 手柄按钮5 toggle (仅在 human_intervention=false 时生效) ==========
+
+        if (!human_intervention_flag) {
+            if( (Teleop_Use()->buttons_[5] == 1 && !button5_pressed) || (arx5_cmd.key_i == 1 && !button5_pressed) )
+            {
+                button5_pressed = true;
+                if (!is_torque_control)
+                {
+                    init_kp=10,init_kp_4=20,init_kd=init_kd_4=init_kd_6=init_kp_4=0;
+                    is_teach_mode = true;
+                    is_torque_control = true;
+                    for (int i = 0; i < 6; i++)
+                        prev_target_pos[i] = target_pos[i];
+                } else {
+                    is_teach_mode = false;
+                    is_torque_control = false;
+                    teach2pos_returning = false;
+                    exit_teach_sync();
+                }
+            }
+
+            if (button5_pressed && !Teleop_Use()->buttons_[5] && !arx5_cmd.key_i)
+                button5_pressed = false;
+        }
+
         // 更新上一次的 human_intervention 状态
         human_intervention_last_flag = human_intervention_flag;
 
+}
+
+void arx_arm::exit_teach_sync()
+{
+    teach_end_x = solve.solve_pos[0];
+    teach_end_y = solve.solve_pos[1];
+    teach_end_z = solve.solve_pos[2];
+    teach_end_roll = solve.solve_pos[3];
+    teach_end_pitch = solve.solve_pos[4];
+    teach_end_yaw = solve.solve_pos[5];
+    teach_end_gripper = limit<float>(current_pos[6], lower_bound_gripper, upper_bound_gripper);
+
+    for (int i = 0; i < 6; i++) {
+        target_pos[i] = current_pos[i];
+        follow_joint_pos_smoothed[i] = current_pos[i];
+    }
+    target_pos[6] = teach_end_gripper;
+    follow_joint_pos_smoothed[6] = teach_end_gripper;
+
+    arx5_cmd.x = teach_end_x;
+    arx5_cmd.y = teach_end_y;
+    arx5_cmd.z = teach_end_z;
+    arx5_cmd.gripper_roll = teach_end_roll;
+    arx5_cmd.waist_pitch = teach_end_pitch;
+    arx5_cmd.waist_yaw = teach_end_yaw;
+    arx5_cmd.gripper = teach_end_gripper;
+
+    arx5_cmd.control_x = teach_end_x - magic_pos[0];
+    arx5_cmd.control_y = teach_end_y - magic_pos[1];
+    arx5_cmd.control_z = teach_end_z - magic_pos[2];
+    arx5_cmd.control_roll = teach_end_roll - magic_angle[2];
+    arx5_cmd.control_pit = teach_end_pitch - magic_angle[0];
+    arx5_cmd.control_yaw = teach_end_yaw - magic_angle[1];
+    arx5_cmd.control_gripper = teach_end_gripper;
+
+    is_starting = false;
+    temp_init = 0;
 }
 
 void arx_arm::arm_replay_mode()
@@ -742,33 +715,16 @@ void arx_arm::arm_reset_mode(){
 
 void arx_arm::arm_get_pos(){
 
-            // 如果使用 master_control 话题控制
-            if(use_master_control) {
-                joy_x_t = master_control_x;
-                joy_y_t = master_control_y;
-                joy_z_t = master_control_z;
-                joy_roll_t = master_control_roll;
-                joy_pitch_t = master_control_pitch;
-                joy_yaw_t = master_control_yaw;
-                joy_gripper_t = master_control_gripper;  
-                
-                arx5_cmd.base_yaw_t = 0.0f; // 或根据需要设置
-                
-                //限位  
-                limit_pos();
-                
-                arx5_cmd.reset = true;
-                float reset_temp_k=0.001;
-                
-                arx5_cmd.x            = ramp(joy_x_t, arx5_cmd.x, reset_temp_k);  
-                arx5_cmd.y            = ramp(joy_y_t, arx5_cmd.y, reset_temp_k);
-                arx5_cmd.z            = ramp(joy_z_t, arx5_cmd.z, reset_temp_k);
-                arx5_cmd.base_yaw     = ramp(arx5_cmd.base_yaw_t, arx5_cmd.base_yaw, 0.009);
-                arx5_cmd.gripper_roll = ramp(joy_roll_t, arx5_cmd.gripper_roll, 0.01);
-                arx5_cmd.waist_pitch  = ramp(joy_pitch_t, arx5_cmd.waist_pitch, 0.01);
-                arx5_cmd.waist_yaw    = ramp(joy_yaw_t, arx5_cmd.waist_yaw, 0.01);
-                arx5_cmd.gripper      = ramp(joy_gripper_t, arx5_cmd.gripper, 0.01); 
-                arx5_cmd.mode = FORWARD;
+            // 如果使用从臂关节跟随模式(非示教模式时)
+            if(use_follow_joint_tracking && !is_teach_mode) {
+                float follow_ramp_k = 0.01f;
+                for(int i=0;i<6;i++) {
+                    follow_joint_pos_smoothed[i] = ramp(follow_joint_pos[i], follow_joint_pos_smoothed[i], follow_ramp_k);
+                }
+                // 夹爪跟随从臂: follow current_pos[6] / 12.0 映射到主臂范围
+                float gripper_target = limit<float>(follow_joint_pos[6] / 12.0f, lower_bound_gripper, upper_bound_gripper);
+                arx5_cmd.gripper = ramp(gripper_target, arx5_cmd.gripper, 0.01);
+                return;
             } else {
                 // 原有的手柄+键盘+ROS控制逻辑
                 arx5_cmd.base_yaw_t += (Teleop_Use()->axes_[0]/100.0f + arx5_cmd.key_base_yaw/100.0f);

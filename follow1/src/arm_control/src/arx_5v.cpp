@@ -19,6 +19,7 @@
 #include "arm_control/JointControl.h"
 #include "arm_control/JointInformation.h"
 #include "arm_control/PosCmd.h"
+#include <std_msgs/Bool.h>
 
 int CONTROL_MODE=0; // 0 arx5 rc ，1 5a rc ，2 arx5 ros ，3 5a ros
 command cmd;
@@ -33,20 +34,47 @@ int main(int argc, char **argv)
 
     arx_arm ARX_ARM((int) CONTROL_MODE);
 
-    ros::Subscriber sub_joint = node.subscribe<arm_control::JointControl>("joint_control", 10, 
+    // 订阅 /joint_control: 仅在示教模式(human_intervention_flag)时写入关节目标, 始终读mode
+    ros::Subscriber sub_joint = node.subscribe<arm_control::JointControl>("joint_control", 10,
                                   [&ARX_ARM](const arm_control::JointControl::ConstPtr& msg) {
-                                      ARX_ARM.ros_control_pos_t[0] = msg->joint_pos[0];
-                                      ARX_ARM.ros_control_pos_t[1] = msg->joint_pos[1];
-                                      ARX_ARM.ros_control_pos_t[2] = msg->joint_pos[2];
-                                      ARX_ARM.ros_control_pos_t[3] = msg->joint_pos[3];
-                                      ARX_ARM.ros_control_pos_t[4] = msg->joint_pos[4];
-                                      ARX_ARM.ros_control_pos_t[5] = msg->joint_pos[5];
-                                      ARX_ARM.ros_control_pos_t[6] = msg->joint_pos[6];
+                                      // 始终读取 mode 字段
                                       ARX_ARM.record_mode = msg->mode;
+                                      // 仅在示教模式下接受关节控制
+                                      if(ARX_ARM.human_intervention_flag || msg->mode == 2) {
+                                          ARX_ARM.ros_control_pos_t[0] = msg->joint_pos[0];
+                                          ARX_ARM.ros_control_pos_t[1] = msg->joint_pos[1];
+                                          ARX_ARM.ros_control_pos_t[2] = msg->joint_pos[2];
+                                          ARX_ARM.ros_control_pos_t[3] = msg->joint_pos[3];
+                                          ARX_ARM.ros_control_pos_t[4] = msg->joint_pos[4];
+                                          ARX_ARM.ros_control_pos_t[5] = msg->joint_pos[5];
+                                          ARX_ARM.ros_control_pos_t[6] = msg->joint_pos[6];
+                                      }
+                                  });
+
+    // 订阅 /follow_control: 从臂末端位姿控制(PosCmd)
+    ros::Subscriber sub_follow_control = node.subscribe<arm_control::PosCmd>("/follow_control", 10,
+                                  [&ARX_ARM](const arm_control::PosCmd::ConstPtr& msg) {
+                                      ARX_ARM.follow_control_x = msg->x;
+                                      ARX_ARM.follow_control_y = msg->y;
+                                      ARX_ARM.follow_control_z = msg->z;
+                                      ARX_ARM.follow_control_roll = msg->roll;
+                                      ARX_ARM.follow_control_pitch = msg->pitch;
+                                      ARX_ARM.follow_control_yaw = msg->yaw;
+                                      ARX_ARM.follow_control_gripper = msg->gripper;
+                                      ARX_ARM.use_follow_control = true;
+                                  });
+
+    // 订阅 /human_intervention: 模式切换
+    ros::Subscriber sub_human_intervention = node.subscribe<std_msgs::Bool>("/human_intervention", 10,
+                                  [&ARX_ARM](const std_msgs::Bool::ConstPtr& msg) {
+                                      ARX_ARM.human_intervention_flag = msg->data;
+                                      ROS_INFO("Follow1 Human intervention: %s", msg->data ? "TRUE" : "FALSE");
                                   });
 
     ros::Publisher pub_current = node.advertise<arm_control::JointInformation>("joint_information", 10);
     ros::Publisher pub_pos = node.advertise<arm_control::PosCmd>("/follow1_pos_back", 10);
+    // 发布 /master_joint_control: 从臂关节位置 → 主臂跟随
+    ros::Publisher pub_master_joint = node.advertise<arm_control::JointControl>("/master_joint_control", 10);
     
 
 
@@ -108,7 +136,19 @@ int main(int argc, char **argv)
             msg_pos_back.yaw    =ARX_ARM.solve.solve_pos[5];
             msg_pos_back.gripper=ARX_ARM.current_pos[6];
             msg_pos_back.header.stamp = time;
-            pub_pos.publish(msg_pos_back);            
+            pub_pos.publish(msg_pos_back);
+
+//发送关节位置给主臂跟随
+            arm_control::JointControl msg_master_joint;
+            for(int i=0;i<7;i++)
+            {
+                msg_master_joint.joint_pos[i] = ARX_ARM.current_pos[i];
+                msg_master_joint.joint_vel[i] = ARX_ARM.current_vel[i];
+                msg_master_joint.joint_cur[i] = ARX_ARM.current_torque[i];
+            }
+            msg_master_joint.mode = 0;
+            msg_master_joint.header.stamp = time;
+            pub_master_joint.publish(msg_master_joint);
 
 
         ros::spinOnce();
