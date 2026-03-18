@@ -41,19 +41,21 @@ int main(int argc, char **argv)
                                       ARX_ARM.ros_control_cur_t[4] = msg->joint_cur[4];
                                       ARX_ARM.ros_control_cur_t[5] = msg->joint_cur[5];
                                       ARX_ARM.ros_control_cur_t[6] = msg->joint_cur[6];
-                                      ARX_ARM.ros_control_pos_t[6] = msg->joint_pos[6];
+                                      ARX_ARM.ros_control_pos_t[6] = msg->joint_pos[6] / 12;
                                   });
 
     // 订阅 /master_joint_control: 从臂关节位置 → 主臂跟随
     ros::Subscriber sub_master_joint = node.subscribe<arm_control::JointControl>("/master_joint_control", 10,
                                   [&ARX_ARM](const arm_control::JointControl::ConstPtr& msg) {
-                                      for(int i=0;i<7;i++) {
+                                      for(int i=0;i<6;i++) {
                                           ARX_ARM.follow_joint_pos[i] = msg->joint_pos[i];
                                       }
+                                      ARX_ARM.follow_joint_pos[6] = msg->joint_pos[6] / 12.0;
                                       if(!ARX_ARM.follow_joint_initialized) {
-                                          for(int i=0;i<7;i++) {
+                                          for(int i=0;i<6;i++) {
                                               ARX_ARM.follow_joint_pos_smoothed[i] = msg->joint_pos[i];
                                           }
+                                          ARX_ARM.follow_joint_pos_smoothed[6] = msg->joint_pos[6] / 12.0;
                                           ARX_ARM.follow_joint_initialized = true;
                                       }
                                       ARX_ARM.use_follow_joint_tracking = true;
@@ -119,7 +121,7 @@ int main(int argc, char **argv)
             msg_pos_back.roll   =ARX_ARM.solve.solve_pos[3];
             msg_pos_back.pitch  =ARX_ARM.solve.solve_pos[4];
             msg_pos_back.yaw    =ARX_ARM.solve.solve_pos[5];
-            msg_pos_back.gripper=ARX_ARM.current_pos[6];
+            msg_pos_back.gripper=ARX_ARM.current_pos[6]*12; // 映射放大
             msg_pos_back.header.stamp = time;
             pub_pos.publish(msg_pos_back);
         

@@ -112,7 +112,7 @@ int main(int argc, char **argv)
                 msg_joint.joint_cur[i] = ARX_ARM.current_torque[i];
             }    
 
-            msg_joint.joint_pos[6]= ARX_ARM.current_pos[6]/12;
+            msg_joint.joint_pos[6]= ARX_ARM.current_pos[6];
             msg_joint.joint_vel[6]= ARX_ARM.current_vel[6];
             if(ARX_ARM.current_vel[6]<2)
             {
