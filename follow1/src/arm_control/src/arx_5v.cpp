@@ -73,6 +73,9 @@ int main(int argc, char **argv)
 
     ros::Publisher pub_current = node.advertise<arm_control::JointInformation>("joint_information", 10);
     ros::Publisher pub_pos = node.advertise<arm_control::PosCmd>("/follow1_pos_back", 10);
+    ros::Publisher pub_eclip_force = node.advertise<std_msgs::Float32MultiArray>("/follow1_eclip_force", 10);
+    ros::Publisher pub_eclip_tau = node.advertise<std_msgs::Float32MultiArray>("/follow1_eclip_tau", 10);
+    ros::Publisher pub_safe_pos = node.advertise<arm_control::PosCmd>("/follow1_safe_pos", 10);
     // 发布 /master_joint_control: 从臂关节位置 → 主臂跟随
     ros::Publisher pub_master_joint = node.advertise<arm_control::JointControl>("/master_joint_control", 10);
     
@@ -137,6 +140,31 @@ int main(int argc, char **argv)
             msg_pos_back.gripper=ARX_ARM.current_pos[6];
             msg_pos_back.header.stamp = time;
             pub_pos.publish(msg_pos_back);
+
+// 发布两类eclip误差向量
+            std_msgs::Float32MultiArray msg_eclip_force;
+            std_msgs::Float32MultiArray msg_eclip_tau;
+            msg_eclip_force.data.resize(6);
+            msg_eclip_tau.data.resize(6);
+            for (int i = 0; i < 6; ++i)
+            {
+                msg_eclip_force.data[i] = ARX_ARM.cartesian_error_clip_from_force[i];
+                msg_eclip_tau.data[i] = ARX_ARM.cartesian_error_clip_from_tau[i];
+            }
+            pub_eclip_force.publish(msg_eclip_force);
+            pub_eclip_tau.publish(msg_eclip_tau);
+
+// 发布safe位姿
+            arm_control::PosCmd msg_safe_pos;
+            msg_safe_pos.x = ARX_ARM.p_safe[0];
+            msg_safe_pos.y = ARX_ARM.p_safe[1];
+            msg_safe_pos.z = ARX_ARM.p_safe[2];
+            msg_safe_pos.roll = ARX_ARM.p_safe[3];
+            msg_safe_pos.pitch = ARX_ARM.p_safe[4];
+            msg_safe_pos.yaw = ARX_ARM.p_safe[5];
+            msg_safe_pos.gripper = ARX_ARM.follow_control_gripper;
+            msg_safe_pos.header.stamp = time;
+            pub_safe_pos.publish(msg_safe_pos);
 
 //发送关节位置给主臂跟随
             arm_control::JointControl msg_master_joint;

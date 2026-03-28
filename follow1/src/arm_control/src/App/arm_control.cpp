@@ -1,4 +1,6 @@
 #include "App/arm_control.h"
+#include <Eigen/Core>
+#include <Eigen/SVD>
 
 
 #define postion_control_spd 300
@@ -661,7 +663,133 @@ void arx_arm::arm_reset_mode(){
 
 }
 
+void arx_arm::compute_safe_follow_target(float p_safe[6])
+{
+    // p_act: 当前FK末端位姿
+    float p_act[6] = {
+        solve.solve_pos[0], solve.solve_pos[1], solve.solve_pos[2],
+        solve.solve_pos[3], solve.solve_pos[4], solve.solve_pos[5]
+    };
+
+    // p_target: 策略输出目标位姿
+    float p_target[6] = {
+        follow_control_x, follow_control_y, follow_control_z,
+        follow_control_roll, follow_control_pitch, follow_control_yaw
+    };
+
+    // 1) e = p_target - p_act
+    // 2) e_clip = clip(e, -Delta_max, Delta_max)
+    // 3) p_safe = p_act + e_clip
+    for (int i = 0; i < 3; ++i)
+    {
+        float e = p_target[i] - p_act[i];
+        float e_clip = limit<float>(e, -cartesian_error_clip_max[i], cartesian_error_clip_max[i]);
+        p_safe[i] = p_act[i] + e_clip;
+    }
+
+    for (int i = 3; i < 6; ++i)
+    {
+        float e = angle_diff(p_target[i], p_act[i]);
+        float e_clip = limit<float>(e, -cartesian_error_clip_max[i], cartesian_error_clip_max[i]);
+        p_safe[i] = valid_angle(p_act[i] + e_clip);
+    }
+}
+
+bool arx_arm::build_jacobian_and_pinv(const float q_joint[6], Eigen::Matrix<float, 6, 6>& J, Eigen::Matrix<float, 6, 6>& J_pinv)
+{
+    if (q_joint == nullptr)
+    {
+        return false;
+    }
+
+    J.setZero();
+    J_pinv.setZero();
+
+    // 使用KDL直接求几何雅可比 J(q)
+    KDL::JntArray q_now(6);
+    for (int i = 0; i < 6; ++i)
+    {
+        q_now(i) = q_joint[i];
+    }
+
+    KDL::ChainJntToJacSolver jac_solver(solve.chain);
+    KDL::Jacobian jac_kdl(6);
+    if (jac_solver.JntToJac(q_now, jac_kdl) < 0)
+    {
+        return false;
+    }
+
+    for (int i = 0; i < 6; ++i)
+    {
+        for (int j = 0; j < 6; ++j)
+        {
+            J(i, j) = static_cast<float>(jac_kdl(i, j));
+        }
+    }
+
+    // SVD伪逆（奇异值截断）
+    Eigen::JacobiSVD<Eigen::Matrix<float, 6, 6>> svd(J, Eigen::ComputeFullU | Eigen::ComputeFullV);
+    Eigen::Matrix<float, 6, 1> s = svd.singularValues();
+    Eigen::Matrix<float, 6, 6> S_inv = Eigen::Matrix<float, 6, 6>::Zero();
+    const float eps = 1e-4f;
+    for (int i = 0; i < 6; ++i)
+    {
+        if (std::fabs(s(i)) > eps)
+        {
+            S_inv(i, i) = 1.0f / s(i);
+        }
+    }
+    J_pinv = svd.matrixV() * S_inv * svd.matrixU().transpose();
+
+    return true;
+}
+
+void arx_arm::update_cartesian_error_clip_from_limits()
+{
+    // 直接求J与J伪逆
+    Eigen::Matrix<float, 6, 6> J = Eigen::Matrix<float, 6, 6>::Zero();
+    Eigen::Matrix<float, 6, 6> J_pinv = Eigen::Matrix<float, 6, 6>::Zero();
+    if (!build_jacobian_and_pinv(current_pos, J, J_pinv))
+    {
+        return;
+    }
+
+    // 近似底层Kp（与motor_control中下发一致）
+    float Kp_diag[6] = {0.0f};
+    const float kp_j1 = (control_mode == 1 || control_mode == 3) ? 39.0f : 150.0f;
+    Kp_diag[0] = kp_j1;
+    Kp_diag[1] = 150.0f;
+    Kp_diag[2] = 150.0f;
+    Kp_diag[3] = 20.0f;
+    Kp_diag[4] = 20.0f;
+    Kp_diag[5] = 20.0f;
+
+    Eigen::Matrix<float, 6, 6> Kp_inv = Eigen::Matrix<float, 6, 6>::Zero();
+    for (int i = 0; i < 6; ++i)
+    {
+        Kp_inv(i, i) = (std::fabs(Kp_diag[i]) > 1e-6f) ? (1.0f / Kp_diag[i]) : 0.0f;
+    }
+
+    // 公式2: B = J * Kp^-1
+    Eigen::Matrix<float, 6, 6> B = J * Kp_inv;
+    // 公式1: A = J * Kp^-1 * J^T
+    Eigen::Matrix<float, 6, 6> A = B * J.transpose();
+
+    // 实时误差向量
+    const Eigen::Map<const Eigen::Matrix<float, 6, 1>> ee_wrench_limit_vec(desired_ee_wrench_limit);
+    const Eigen::Map<const Eigen::Matrix<float, 6, 1>> joint_torque_limit_vec(desired_joint_torque_limit);
+
+    const Eigen::Matrix<float, 6, 1> e_force_vec = A * ee_wrench_limit_vec;
+    const Eigen::Matrix<float, 6, 1> e_tau_vec = B * joint_torque_limit_vec;
+    
+    Eigen::Map<Eigen::Matrix<float, 6, 1>>(cartesian_error_clip_from_force) = e_force_vec;
+    Eigen::Map<Eigen::Matrix<float, 6, 1>>(cartesian_error_clip_from_tau) = e_tau_vec;
+}
+
 void arx_arm::arm_get_pos(){
+
+            // 实时反推 Delta_max（用于示教/运行时标定）
+            // update_cartesian_error_clip_from_limits();
 
             // 检测主臂从示教退出(record_mode从2变非2)
             if(prev_record_mode == 2 && record_mode != 2 && use_follow_control) {
@@ -671,13 +799,23 @@ void arx_arm::arm_get_pos(){
 
             // follow_control 模式: 非示教、非人为干预、主臂非示教(mode!=2)时走话题控制
             if(use_follow_control && !human_intervention_flag && !is_teach_mode && record_mode != 2) {
+                // 在仅位置控制条件下，用末端误差限幅近似实现安全交互(阻抗)
+                // p_safe = p_act + clip(p_target - p_act, -Delta_max, Delta_max)
+                p_safe[0] = follow_control_x;
+                p_safe[1] = follow_control_y;
+                p_safe[2] = follow_control_z;
+                p_safe[3] = follow_control_roll;
+                p_safe[4] = follow_control_pitch;
+                p_safe[5] = follow_control_yaw;
+                
+                // compute_safe_follow_target(p_safe);
 
-                joy_x_t = follow_control_x;
-                joy_y_t = follow_control_y;
-                joy_z_t = follow_control_z;
-                joy_roll_t = follow_control_roll;
-                joy_pitch_t = follow_control_pitch;
-                joy_yaw_t = follow_control_yaw;
+                joy_x_t = p_safe[0];
+                joy_y_t = p_safe[1];
+                joy_z_t = p_safe[2];
+                joy_roll_t = p_safe[3];
+                joy_pitch_t = p_safe[4];
+                joy_yaw_t = p_safe[5];
 
                 arx5_cmd.base_yaw_t = 0.0f;
 
@@ -826,5 +964,9 @@ void arx_arm::sync_to_current_fk()
     follow_control_roll = solve.solve_pos[3];
     follow_control_pitch = solve.solve_pos[4];
     follow_control_yaw = solve.solve_pos[5];
+    for (int i = 0; i < 6; ++i)
+    {
+        p_safe[i] = solve.solve_pos[i];
+    }
     follow_control_gripper = current_pos[6];
 }
