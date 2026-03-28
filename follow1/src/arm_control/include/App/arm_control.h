@@ -338,10 +338,10 @@ public:
     float follow_control_roll=0, follow_control_pitch=0, follow_control_yaw=0;
     float follow_control_gripper=0;
     // 末端误差限幅 (p_safe = p_act + clip(p_target - p_act))
-    float cartesian_error_clip_max[6] = {0.01f, 0.01f, 0.01f, 0.08f, 0.08f, 0.08f};
+    float cartesian_error_clip_max[6] = {0.001f, 0.001f, 0.001f, 0.13f, 0.13f, 0.13f};
     // 由期望末端力/关节力矩限制实时反推的末端误差
     float desired_ee_wrench_limit[6] = {35.0f, 35.0f, 35.0f, 6.0f, 6.0f, 6.0f};
-    float desired_joint_torque_limit[6] = {12.0f, 12.0f, 12.0f, 4.0f, 4.0f, 4.0f};
+    float desired_joint_torque_limit[6] = {15.0f, 15.0f, 15.0f, 15.0f, 15.0f, 15.0f};
     float cartesian_error_clip_from_force[6] = {0.01f, 0.01f, 0.01f, 0.08f, 0.08f, 0.08f};
     float cartesian_error_clip_from_tau[6] = {0.01f, 0.01f, 0.01f, 0.08f, 0.08f, 0.08f};
     float p_safe[6] = {0.0f, 0.0f, 0.01f, 0.0f, 0.0f, 0.0f};

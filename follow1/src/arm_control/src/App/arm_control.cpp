@@ -781,15 +781,17 @@ void arx_arm::update_cartesian_error_clip_from_limits()
 
     const Eigen::Matrix<float, 6, 1> e_force_vec = A * ee_wrench_limit_vec;
     const Eigen::Matrix<float, 6, 1> e_tau_vec = B * joint_torque_limit_vec;
-    
-    Eigen::Map<Eigen::Matrix<float, 6, 1>>(cartesian_error_clip_from_force) = e_force_vec;
-    Eigen::Map<Eigen::Matrix<float, 6, 1>>(cartesian_error_clip_from_tau) = e_tau_vec;
+
+    Eigen::Map<Eigen::Matrix<float, 6, 1>> error_clip_from_force_map(cartesian_error_clip_from_force);
+    Eigen::Map<Eigen::Matrix<float, 6, 1>> error_clip_from_tau_map(cartesian_error_clip_from_tau);
+    error_clip_from_force_map = e_force_vec;
+    error_clip_from_tau_map = e_tau_vec;
 }
 
 void arx_arm::arm_get_pos(){
 
             // 实时反推 Delta_max（用于示教/运行时标定）
-            // update_cartesian_error_clip_from_limits();
+            update_cartesian_error_clip_from_limits();
 
             // 检测主臂从示教退出(record_mode从2变非2)
             if(prev_record_mode == 2 && record_mode != 2 && use_follow_control) {
@@ -808,14 +810,21 @@ void arx_arm::arm_get_pos(){
                 p_safe[4] = follow_control_pitch;
                 p_safe[5] = follow_control_yaw;
                 
-                // compute_safe_follow_target(p_safe);
+                compute_safe_follow_target(p_safe);
 
-                joy_x_t = p_safe[0];
-                joy_y_t = p_safe[1];
-                joy_z_t = p_safe[2];
-                joy_roll_t = p_safe[3];
-                joy_pitch_t = p_safe[4];
-                joy_yaw_t = p_safe[5];
+                // joy_x_t = p_safe[0];
+                // joy_y_t = p_safe[1];
+                // joy_z_t = p_safe[2];
+                // joy_roll_t = p_safe[3];
+                // joy_pitch_t = p_safe[4];
+                // joy_yaw_t = p_safe[5];
+                
+                joy_x_t = follow_control_x;
+                joy_y_t = follow_control_y;
+                joy_z_t = follow_control_z;
+                joy_roll_t = follow_control_roll;
+                joy_pitch_t = follow_control_pitch;
+                joy_yaw_t = follow_control_yaw;
 
                 arx5_cmd.base_yaw_t = 0.0f;
 
