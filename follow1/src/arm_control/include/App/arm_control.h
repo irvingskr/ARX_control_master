@@ -155,8 +155,25 @@ public:
     float lower_bound_waist[3] = {  0.0, -0.4, -0.4};
     float upper_bound_waist[3] = {  0.4,  0.4,  0.4};
 
+    // 地面防碰撞限幅参数（单位:m）
+    // 约束逻辑：末端固连点集合中的每个点，其世界系z都不能低于ground_z_limit
+    float ground_z_limit = -0.10f;
+    // 可配置末端固连点(末端坐标系局部坐标, 单位m)
+    // 默认包含3个点：
+    // 1) [0, 0, -0.06] 操纵杆向下6cm
+    // 2) [0, +0.04, +0.02] 侧向点
+    // 3) [0, -0.04, +0.02] 侧向点
+    std::vector<cartesian> tool_collision_points_local = {
+        cartesian{0.0f, 0.0f, -0.06f},
+        cartesian{0.0f, 0.04f, 0.02f},
+        cartesian{0.0f, -0.04f, 0.02f}
+    };
+    // 运行时计算得到的固连点世界系z（与tool_collision_points_local一一对应）
+    std::vector<float> tool_collision_points_world_z;
+    float ground_margin = 0.005f;
+
     float lower_bound_pitch = -1.35;
-    float upper_bound_pitch = M_PI/2; 
+    float upper_bound_pitch = 1.50f;
     float lower_bound_yaw = -1.35;
     float upper_bound_yaw = 1.35;
 
@@ -327,6 +344,7 @@ public:
     //Recordandreplay teach_mode
     void arm_teach_mode();  
     void limit_pos();
+    float get_dynamic_ee_z_lower_bound(float ee_z, float roll, float pitch, float yaw);
     void sync_to_current_fk(); // 同步arx5_cmd和follow_control到当前FK位姿
     float follow_pos_k=1.0f;
     int record_mode=0;
