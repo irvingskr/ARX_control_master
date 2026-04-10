@@ -70,6 +70,7 @@ int main(int argc, char **argv)
 
     ros::Publisher pub_joint = node.advertise<arm_control::JointControl>("/joint_control", 10);
     ros::Publisher pub_pos = node.advertise<arm_control::PosCmd>("/master1_pos_back", 10);
+    ros::Publisher pub_safe_pos = node.advertise<arm_control::PosCmd>("/master1_safe_pos", 10);
     
     arx5_keyboard ARX_KEYBOARD;
 
@@ -124,6 +125,17 @@ int main(int argc, char **argv)
             msg_pos_back.gripper=ARX_ARM.current_pos[6]*12; // 映射放大
             msg_pos_back.header.stamp = time;
             pub_pos.publish(msg_pos_back);
+
+            // 发布safe位姿
+            arm_control::PosCmd msg_safe_pos;
+            msg_safe_pos.x = ARX_ARM.p_safe[0];
+            msg_safe_pos.y = ARX_ARM.p_safe[1];
+            msg_safe_pos.z = ARX_ARM.p_safe[2];
+            msg_safe_pos.roll = ARX_ARM.p_safe[3];
+            msg_safe_pos.pitch = ARX_ARM.p_safe[4];
+            msg_safe_pos.yaw = ARX_ARM.p_safe[5];
+            msg_safe_pos.header.stamp = time;
+            pub_safe_pos.publish(msg_safe_pos);
         
         ros::spinOnce();
         loop_rate.sleep();

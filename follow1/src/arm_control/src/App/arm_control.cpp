@@ -812,19 +812,19 @@ void arx_arm::arm_get_pos(){
                 
                 compute_safe_follow_target(p_safe);
 
-                // joy_x_t = p_safe[0];
-                // joy_y_t = p_safe[1];
-                // joy_z_t = p_safe[2];
-                // joy_roll_t = p_safe[3];
-                // joy_pitch_t = p_safe[4];
-                // joy_yaw_t = p_safe[5];
+                joy_x_t = p_safe[0];
+                joy_y_t = p_safe[1];
+                joy_z_t = p_safe[2];
+                joy_roll_t = p_safe[3];
+                joy_pitch_t = p_safe[4];
+                joy_yaw_t = p_safe[5];
                 
-                joy_x_t = follow_control_x;
-                joy_y_t = follow_control_y;
-                joy_z_t = follow_control_z;
-                joy_roll_t = follow_control_roll;
-                joy_pitch_t = follow_control_pitch;
-                joy_yaw_t = follow_control_yaw;
+                // joy_x_t = follow_control_x;
+                // joy_y_t = follow_control_y;
+                // joy_z_t = follow_control_z;
+                // joy_roll_t = follow_control_roll;
+                // joy_pitch_t = follow_control_pitch;
+                // joy_yaw_t = follow_control_yaw;
 
                 arx5_cmd.base_yaw_t = 0.0f;
 

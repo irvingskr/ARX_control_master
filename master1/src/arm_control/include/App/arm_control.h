@@ -384,6 +384,10 @@ public:
     void cur_change();
     void cmd_init();
 
+    // 末端误差限幅 (p_safe = p_act + clip(p_target - p_act))
+    float cartesian_error_clip_max[6] = {0.015f, 0.015f, 0.015f, 0.13f, 0.13f, 0.13f};
+    float p_safe[6] = {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
+    void compute_safe_follow_target(float p_safe[6]);
 
 private:
     // for ros configurations

@@ -43,8 +43,6 @@ sleep 0.5
 
 echo "[INFO] Launching rqt_plot (position xyz)..."
 rqt_plot \
-  /follow1_pos_back/x /follow1_safe_pos/x /follow_control/x \
-  /follow1_pos_back/y /follow1_safe_pos/y /follow_control/y \
   /follow1_pos_back/z /follow1_safe_pos/z /follow_control/z \
   >/tmp/rqt_plot_follow1_xyz.log 2>&1 &
 
@@ -52,9 +50,7 @@ sleep 0.5
 
 echo "[INFO] Launching rqt_plot (orientation rpy)..."
 rqt_plot \
-  /follow1_pos_back/roll /follow1_safe_pos/roll /follow_control/roll \
   /follow1_pos_back/pitch /follow1_safe_pos/pitch /follow_control/pitch \
-  /follow1_pos_back/yaw /follow1_safe_pos/yaw /follow_control/yaw \
   >/tmp/rqt_plot_follow1_rpy.log 2>&1 &
 
 sleep 0.5
