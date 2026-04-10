@@ -1,6 +1,8 @@
 #include "App/arm_control.h"
 #include <Eigen/Core>
 #include <Eigen/SVD>
+#include <algorithm>
+#include <cmath>
 
 
 #define postion_control_spd 300
@@ -541,6 +543,9 @@ void arx_arm::arm_torque_mode()
                 init_kp=10,init_kp_4=20,init_kd=init_kd_4=init_kd_6=init_kp_4=0;
                 is_teach_mode = true;
                 is_torque_control = true;
+
+                ros_control_pos_t[6] = current_pos[6];
+
                 for (int i = 0; i < 6; i++)
                     prev_target_pos[i] = target_pos[i];
                 ROS_WARN("Follow1 Human intervention: Force enter torque mode!");
@@ -928,25 +933,67 @@ void arx_arm::arm_teach_mode(){
 
 }
 
+float arx_arm::get_dynamic_ee_z_lower_bound(float ee_z, float roll, float pitch, float yaw)
+{
+    if (tool_collision_points_local.empty())
+    {
+        tool_collision_points_world_z.clear();
+        return lower_bound_waist[2];
+    }
+
+    // 使用末端反馈姿态将“多个工具局部固连点”旋转到世界系，再反推ee允许的最低z
+    // 对每个点 p_i(local): z_i(world) = z_ee + (R*p_i).z
+    // 约束 z_i(world) >= ground_z_limit + ground_margin
+    // => z_ee >= ground_z_limit + ground_margin - (R*p_i).z
+    // 对全部点同时满足，取所有候选下限的最大值
+    const float pitch_for_proj = limit<float>(pitch, -1.56f, 1.56f);
+    KDL::Rotation R_ee = KDL::Rotation::RPY(roll, pitch_for_proj, yaw);
+    const float ground_safe_z = ground_z_limit + ground_margin;
+
+    float ee_z_lower_bound = ground_safe_z;
+    tool_collision_points_world_z.resize(tool_collision_points_local.size(), ee_z);
+
+    for (size_t i = 0; i < tool_collision_points_local.size(); ++i)
+    {
+        const auto& p_local = tool_collision_points_local[i];
+        KDL::Vector local_pt(p_local.x, p_local.y, p_local.z);
+        KDL::Vector world_pt = R_ee * local_pt;
+        tool_collision_points_world_z[i] = ee_z + static_cast<float>(world_pt.z());
+        const float candidate = ground_safe_z - static_cast<float>(world_pt.z());
+        if (candidate > ee_z_lower_bound)
+        {
+            ee_z_lower_bound = candidate;
+        }
+    }
+
+    return ee_z_lower_bound;
+}
+
 void arx_arm::limit_pos()
 {
+        // 随末端反馈姿态动态变化的z下限（防止末端附着物触地）
+        float z_lower_bound_dynamic = lower_bound_waist[2];
+        // float z_lower_bound_dynamic = get_dynamic_ee_z_lower_bound(
+        //     solve.solve_pos[2], solve.solve_pos[3], solve.solve_pos[4], solve.solve_pos[5]);
+        float z_lower_bound = std::max(lower_bound_waist[2], z_lower_bound_dynamic);
+
         joy_x_t = limit<float>(joy_x_t, lower_bound_waist[0], upper_bound_waist[0]);
         joy_y_t = limit<float>(joy_y_t, lower_bound_waist[1], upper_bound_waist[1]);
-        joy_z_t = limit<float>(joy_z_t, lower_bound_waist[2], upper_bound_waist[2]);
+        joy_z_t = limit<float>(joy_z_t, z_lower_bound, upper_bound_waist[2]);
         joy_pitch_t = limit<float>(joy_pitch_t, lower_bound_pitch, upper_bound_pitch);
         joy_yaw_t   = limit<float>(joy_yaw_t, lower_bound_yaw, upper_bound_yaw);
         joy_roll_t  = limit<float>(joy_roll_t, lower_bound_sim[ROLL], upper_bound_sim[ROLL]);
 
         arx5_cmd.control_x = limit<float>(arx5_cmd.control_x, lower_bound_waist[0], upper_bound_waist[0]);
         arx5_cmd.control_y = limit<float>(arx5_cmd.control_y, lower_bound_waist[1], upper_bound_waist[1]);
-        arx5_cmd.control_z = limit<float>(arx5_cmd.control_z, lower_bound_waist[2], upper_bound_waist[2]);
+        arx5_cmd.control_z = limit<float>(arx5_cmd.control_z, z_lower_bound, upper_bound_waist[2]);
         arx5_cmd.control_pit   = limit<float>(arx5_cmd.control_pit, lower_bound_pitch, upper_bound_pitch);
         arx5_cmd.control_yaw   = limit<float>(arx5_cmd.control_yaw, lower_bound_yaw, upper_bound_yaw);
         arx5_cmd.control_roll  = limit<float>(arx5_cmd.control_roll, lower_bound_sim[ROLL], upper_bound_sim[ROLL]);
 
         magic_pos[0] = limit<float>(magic_pos[0], lower_bound_waist[0], upper_bound_waist[0]);
         magic_pos[1] = limit<float>(magic_pos[1], lower_bound_waist[1], upper_bound_waist[1]);
-        magic_pos[2] = limit<float>(magic_pos[2], lower_bound_waist[2], upper_bound_waist[2]);
+        magic_pos[2] = limit<float>(magic_pos[2], z_lower_bound, upper_bound_waist[2]);
         magic_angle[0] = limit<float>(magic_angle[0], lower_bound_pitch, upper_bound_pitch);
         magic_angle[1] = limit<float>(magic_angle[1], lower_bound_yaw, upper_bound_yaw);
         magic_angle[2] = limit<float>(magic_angle[2], lower_bound_sim[ROLL], upper_bound_sim[ROLL]);

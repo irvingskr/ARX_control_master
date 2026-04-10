@@ -76,6 +76,7 @@ int main(int argc, char **argv)
     ros::Publisher pub_eclip_force = node.advertise<std_msgs::Float32MultiArray>("/follow1_eclip_force", 10);
     ros::Publisher pub_eclip_tau = node.advertise<std_msgs::Float32MultiArray>("/follow1_eclip_tau", 10);
     ros::Publisher pub_safe_pos = node.advertise<arm_control::PosCmd>("/follow1_safe_pos", 10);
+    ros::Publisher pub_tool_points_world_z = node.advertise<std_msgs::Float32MultiArray>("/follow1_tool_points_world_z", 10);
     // 发布 /master_joint_control: 从臂关节位置 → 主臂跟随
     ros::Publisher pub_master_joint = node.advertise<arm_control::JointControl>("/master_joint_control", 10);
     
@@ -165,6 +166,11 @@ int main(int argc, char **argv)
             msg_safe_pos.gripper = ARX_ARM.follow_control_gripper;
             msg_safe_pos.header.stamp = time;
             pub_safe_pos.publish(msg_safe_pos);
+
+// 发布末端固连点世界系z（检验防碰地）
+            std_msgs::Float32MultiArray msg_tool_points_world_z;
+            msg_tool_points_world_z.data = ARX_ARM.tool_collision_points_world_z;
+            pub_tool_points_world_z.publish(msg_tool_points_world_z);
 
 //发送关节位置给主臂跟随
             arm_control::JointControl msg_master_joint;
